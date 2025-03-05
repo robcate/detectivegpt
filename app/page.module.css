@@ -25,14 +25,25 @@
 
 /* Chat Container */
 .chatContainer {
-  width: 90%;
-  max-width: 550px;
+  width: 100%;
+  max-width: 650px;
   background: white;
-  padding: 20px;
+  padding: 16px;
   border-radius: 16px;
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
-  height: auto;
-  margin: auto;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+  height: 80vh; /* Utilize vertical space */
+  margin: 16px auto;
+  display: flex;
+  flex-direction: column;
+
+}
+
+@media (max-width: 768px) {
+  .chatContainer {
+    height: calc(100vh - 60px); /* optimized height for mobile */
+    border-radius: 0;
+    box-shadow: none;
+  }
 }
 
 /* Chat Input */
