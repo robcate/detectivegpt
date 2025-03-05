@@ -6,7 +6,7 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata = {
   title: "Detective GPT",
-  description: "Report crimes securley & anonymously. Your information is protected.",
+  description: "Report crimes securely & anonymously. Your information is protected.",
   icons: {
     icon: "/openai.svg",
   },
@@ -17,7 +17,7 @@ export default function RootLayout({ children }) {
     <html lang="en">
       <body className={inter.className}>
         {assistantId ? children : <Warnings />}
-        <img className="logo" src="/openai.svg" alt="OpenAI Logo" />
+        {/* Removed OpenAI Logo */}
       </body>
     </html>
   );

@@ -1,47 +1,80 @@
+/* Main container styling */
 .main {
   display: flex;
   flex-direction: column;
-  justify-content: center;
   align-items: center;
-  height: 100vh;
-  background-color: white;
-}
-.title {
-  font-size: 1.5em;
-  margin-bottom: 20px;
-  font-weight: 600;
-}
-
-.container {
-  display: flex;
-  flex-direction: row;
-  gap: 20px;
-  max-width: 1200px;
-  width: 100%;
-  padding: 20px;
-  box-sizing: border-box;
-  align-items: center;
-  justify-content: center;
-}
-
-.category {
-  color: black;
-  display: flex;
-  font-size: 1em;
-  border-radius: 32px;
-  justify-content: center;
-  align-items: center;
+  justify-content: flex-start;
+  background-color: #f1f5f9;
+  font-family: Arial, sans-serif;
   text-align: center;
-  background-color: #efefef;
-  cursor: pointer;
-  max-width: 600px;
-  width: 120px;
-  height: 120px;
   padding: 20px;
-  transition: background-color 0.3s ease;
-  font-weight: 500;
+  min-height: 100vh;
 }
 
-.category:hover {
-  background-color: #e3e3eb;
+/* Crime Report Summary */
+.crimeReport {
+  width: 90%;
+  max-width: 550px;
+  background-color: #fff;
+  padding: 20px;
+  margin: 20px auto;
+  border-radius: 16px;
+  box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+  text-align: left;
+}
+
+/* Chat Container */
+.chatContainer {
+  width: 90%;
+  max-width: 550px;
+  background: white;
+  padding: 20px;
+  border-radius: 16px;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+  height: auto;
+  margin: auto;
+}
+
+/* Chat Input */
+.inputContainer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 90%;
+  max-width: 550px;
+  margin-top: 20px;
+}
+
+.inputContainer input {
+  flex: 1;
+  padding: 12px;
+  border-radius: 8px;
+  border: 2px solid #ccc;
+  background: #f9f9f9;
+  font-size: 1rem;
+}
+
+.inputContainer button {
+  background-color: #2563eb;
+  color: white;
+  font-weight: bold;
+  padding: 10px 15px;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-left: 10px;
+}
+
+.inputContainer button:hover {
+  background-color: #1e40af;
+}
+
+@media (max-width: 768px) {
+  .main, .crimeReport, .chatContainer {
+    padding: 10px;
+    width: 100%;
+  }
+
+  .crimeReport {
+    font-size: 14px;
+  }
 }
