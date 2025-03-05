@@ -30,7 +30,7 @@ const FunctionCalling = () => {
     {
       role: "assistant",
       content:
-        "🚔 Hello! I'm Detective GPT. Please clearly describe the incident, providing as much detail as possible about the crime, suspect(s), vehicle(s), and any evidence.",
+        "🚔 DetectiveGPT ready to take your statement about the incident. Please describe clearly what happened, including details about the suspect(s), vehicle(s), and any evidence.",
     },
   ]);
 

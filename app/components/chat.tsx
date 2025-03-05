@@ -14,6 +14,16 @@ type MessageProps = {
   timestamp?: Date;
 };
 
+type InitialMessage = {
+  role: "assistant";
+  content: string;
+};
+
+type ChatProps = {
+  functionCallHandler?: (toolCall: RequiredActionFunctionToolCall) => Promise<string>;
+  initialMessages?: InitialMessage[];
+};
+
 const UserMessage = ({ text, timestamp }: { text: string; timestamp?: Date }) => (
   <div className={styles.userMessage}>
     <div className={styles.messageContent}>
@@ -25,10 +35,6 @@ const UserMessage = ({ text, timestamp }: { text: string; timestamp?: Date }) =>
   </div>
 );
 
-/** 
- * This custom markdown renderer applies special styling to 
- * headings, lists, code blocks, etc. via CSS.
- */
 const AssistantMessage = ({ text, timestamp }: { text: string; timestamp?: Date }) => {
   return (
     <div className={styles.assistantMessage} style={{ textAlign: 'left' }}>
@@ -42,7 +48,6 @@ const AssistantMessage = ({ text, timestamp }: { text: string; timestamp?: Date 
     </div>
   );
 };
-
 
 const CodeMessage = ({ text }: { text: string }) => (
   <div className={styles.codeMessage}>
@@ -68,13 +73,16 @@ const Message = ({ role, text, timestamp }: MessageProps) => {
   }
 };
 
-type ChatProps = {
-  functionCallHandler?: (toolCall: RequiredActionFunctionToolCall) => Promise<string>;
-};
-
-const Chat = ({ functionCallHandler = () => Promise.resolve("") }: ChatProps) => {
+const Chat = ({
+  functionCallHandler = () => Promise.resolve(""),
+  initialMessages = [],
+}: ChatProps) => {
   const [userInput, setUserInput] = useState("");
-  const [messages, setMessages] = useState<MessageProps[]>([]);
+  const [messages, setMessages] = useState<MessageProps[]>(initialMessages.map(msg => ({
+    role: msg.role,
+    text: msg.content,
+    timestamp: new Date(),
+  })));
   const [inputDisabled, setInputDisabled] = useState(false);
   const [threadId, setThreadId] = useState("");
 
@@ -185,16 +193,10 @@ const Chat = ({ functionCallHandler = () => Promise.resolve("") }: ChatProps) =>
     <div className={styles.chatContainer}>
       <div className={styles.messages}>
         {messages.map((msg, index) => (
-          <Message
-            key={index}
-            role={msg.role}
-            text={msg.text}
-            timestamp={msg.timestamp || new Date()}
-          />
+          <Message key={index} role={msg.role} text={msg.text} timestamp={msg.timestamp} />
         ))}
         <div ref={messagesEndRef} />
       </div>
-
       <form onSubmit={handleSubmit} className={styles.inputForm}>
         <input
           type="text"
