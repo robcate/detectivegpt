@@ -28,7 +28,7 @@ const FunctionCalling = () => {
   const [crimeReport, setCrimeReport] = useState<CrimeReportData>({});
   const [initialMessages] = useState([
     {
-      role: "assistant",
+      role: "assistant" as const,
       content:
         "🚔 DetectiveGPT ready to take your statement about the incident. Please describe clearly what happened, including details about the suspect(s), vehicle(s), and any evidence.",
     },
