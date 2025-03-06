@@ -2,10 +2,10 @@
 
 import React, { useState } from "react";
 import styles from "./page.module.css";
-import Chat from "./components/chat"; // your Chat
+import Chat from "./components/chat";
 import { RequiredActionFunctionToolCall } from "openai/resources/beta/threads/runs/runs";
 import jsPDF from "jspdf";
-import getVerifiedLocation from "./utils/getLocation"; // <--- import from utils
+import getVerifiedLocation from "./utils/getLocation";
 
 interface Coordinates {
   lat: number;
@@ -29,11 +29,11 @@ interface CrimeReportData {
   vehicle?: string;
   weapon?: string;
   evidence?: string;
-  // If you have witnesses, you can add them here
 }
 
-const FunctionCalling = () => {
+export default function Page() {
   const [crimeReport, setCrimeReport] = useState<CrimeReportData>({});
+
   const [initialMessages] = useState([
     {
       role: "assistant" as const,
@@ -44,7 +44,7 @@ const FunctionCalling = () => {
 
   console.log("🟨 [page.tsx] Rendered with crimeReport:", crimeReport);
 
-  // PDF Generation
+  // PDF
   const downloadPDFReport = () => {
     console.log("🟨 [page.tsx] Generating PDF report...");
     const doc = new jsPDF();
@@ -67,7 +67,6 @@ const FunctionCalling = () => {
     addLine("When", crimeReport.datetime || "N/A");
     addLine("Location", crimeReport.location || "N/A");
 
-    // If lat/lng present
     if (crimeReport.coordinates) {
       addLine("Latitude", crimeReport.coordinates.lat.toString());
       addLine("Longitude", crimeReport.coordinates.lng.toString());
@@ -92,10 +91,10 @@ const FunctionCalling = () => {
     doc.save("official_crime_report.pdf");
   };
 
-  // The function call handler with logging
+  // function call handler
   const functionCallHandler = async (call: RequiredActionFunctionToolCall) => {
     if (!call?.function?.name) {
-      console.warn("🟨 [page.tsx] No function name provided in call");
+      console.warn("🟨 [page.tsx] No function name in call");
       return;
     }
 
@@ -105,21 +104,15 @@ const FunctionCalling = () => {
       const args = JSON.parse(call.function.arguments) as CrimeReportData;
       console.log("🟨 [page.tsx] update_crime_report args:", args);
 
-      // If user provided a location, let's verify it
+      // location logic
       if (args.location) {
         console.log("🟨 [page.tsx] Attempting to verify location:", args.location);
-        const {
-          success,
-          locationCandidates,
-          singleResult,
-          error,
-        } = await getVerifiedLocation(args.location);
+        const { success, locationCandidates, singleResult, error } = await getVerifiedLocation(args.location);
 
         if (!success) {
           console.warn("🟨 [page.tsx] getVerifiedLocation => not success:", error);
-          // We won't store lat/lng
         } else if (locationCandidates.length > 1) {
-          console.log("🟨 [page.tsx] getVerifiedLocation => multiple matches. Returning them to model...");
+          console.log("🟨 [page.tsx] getVerifiedLocation => multiple matches, returning them...");
           return JSON.stringify({
             success: true,
             message: "Crime report updated, but multiple location matches found.",
@@ -128,23 +121,14 @@ const FunctionCalling = () => {
           });
         } else if (singleResult) {
           console.log("🟨 [page.tsx] getVerifiedLocation => single match:", singleResult);
-          args.coordinates = {
-            lat: singleResult.lat,
-            lng: singleResult.lng,
-          };
-          // Optionally, you could also store singleResult.formattedAddress in args.location
-          // if you want the user to see the precise address
+          args.coordinates = { lat: singleResult.lat, lng: singleResult.lng };
           args.location = singleResult.formattedAddress;
         }
       }
 
-      // Merge new data into our local state
-      setCrimeReport((prev) => ({
-        ...prev,
-        ...args,
-      }));
+      // merge into state
+      setCrimeReport((prev) => ({ ...prev, ...args }));
 
-      // Return success
       console.log("🟨 [page.tsx] Crime report updated. Returning success JSON...");
       return JSON.stringify({
         success: true,
@@ -153,7 +137,7 @@ const FunctionCalling = () => {
       });
     }
 
-    console.log("🟨 [page.tsx] No matching function found for:", call.function.name);
+    console.log("🟨 [page.tsx] No matching function for:", call.function.name);
     return;
   };
 
@@ -170,31 +154,18 @@ const FunctionCalling = () => {
 
       <div className={styles.crimeReportContainer}>
         <h3>Crime Report Summary</h3>
-        <p>
-          <strong>Type:</strong> {crimeReport.crime_type || "N/A"}
-        </p>
-        <p>
-          <strong>When:</strong> {crimeReport.datetime || "N/A"}
-        </p>
-        <p>
-          <strong>Location:</strong> {crimeReport.location || "N/A"}
-        </p>
+        <p><strong>Type:</strong> {crimeReport.crime_type || "N/A"}</p>
+        <p><strong>When:</strong> {crimeReport.datetime || "N/A"}</p>
+        <p><strong>Location:</strong> {crimeReport.location || "N/A"}</p>
 
-        {/* Show lat/lng if present */}
         {crimeReport.coordinates && (
           <>
-            <p>
-              <strong>Latitude:</strong> {crimeReport.coordinates.lat}
-            </p>
-            <p>
-              <strong>Longitude:</strong> {crimeReport.coordinates.lng}
-            </p>
+            <p><strong>Latitude:</strong> {crimeReport.coordinates.lat}</p>
+            <p><strong>Longitude:</strong> {crimeReport.coordinates.lng}</p>
           </>
         )}
 
-        <p>
-          <strong>Vehicle:</strong> {crimeReport.vehicle || "N/A"}
-        </p>
+        <p><strong>Vehicle:</strong> {crimeReport.vehicle || "N/A"}</p>
 
         {crimeReport.suspect && (
           <div>
@@ -207,12 +178,8 @@ const FunctionCalling = () => {
           </div>
         )}
 
-        <p>
-          <strong>Weapon:</strong> {crimeReport.weapon || "N/A"}
-        </p>
-        <p>
-          <strong>Evidence:</strong> {crimeReport.evidence || "N/A"}
-        </p>
+        <p><strong>Weapon:</strong> {crimeReport.weapon || "N/A"}</p>
+        <p><strong>Evidence:</strong> {crimeReport.evidence || "N/A"}</p>
 
         <button className="downloadButton" onClick={downloadPDFReport}>
           📥 Download PDF Report
@@ -220,6 +187,4 @@ const FunctionCalling = () => {
       </div>
     </main>
   );
-};
-
-export default FunctionCalling;
+}
