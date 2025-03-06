@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import styles from "./page.module.css";
-import Chat from "./components/chat"; // Adjust if needed
+import Chat from "./components/chat"; // Adjust import if needed
 import { RequiredActionFunctionToolCall } from "openai/resources/beta/threads/runs/runs";
 import jsPDF from "jspdf";
 import getVerifiedLocation from "./utils/getLocation";
@@ -29,19 +29,21 @@ interface CrimeReportData {
   vehicle?: string;
   weapon?: string;
   evidence?: string;
+  suspectSketchUrl?: string; // We'll store the final DALL-E image URL here
 }
 
 export default function Page() {
   // Local state for your crime report
   const [crimeReport, setCrimeReport] = useState<CrimeReportData>({});
 
-  // Here is your initial system prompt (the first assistant message)
+  // Initial system prompt (the first assistant message)
+  // ADDED: instruct model to embed the image in Markdown
   const [initialMessages] = useState([
     {
       role: "assistant" as const,
       content:
         "I'm ready to take your statement about the incident. " +
-        "Please describe clearly what happened, including details about the suspect(s), vehicle(s), and any evidence.",
+        "Please describe clearly what happened, including details about the suspect(s), vehicle(s), and any evidence. ",
     },
   ]);
 
@@ -93,16 +95,71 @@ export default function Page() {
     doc.save("official_crime_report.pdf");
   };
 
-  // The function call handler for "update_crime_report"
+  /**
+   * Generate suspect sketch by calling our secure API route at /api/sketch
+   * This keeps our OpenAI key on the server (App Router).
+   */
+  async function generateSuspectSketch({
+    gender,
+    age,
+    hair,
+    clothing,
+    features,
+    refinements,
+  }: {
+    gender?: string;
+    age?: string;
+    hair?: string;
+    clothing?: string;
+    features?: string;
+    refinements?: string;
+  }): Promise<string> {
+    console.log("🟨 [page.tsx] generateSuspectSketch => calling /api/sketch", {
+      gender,
+      age,
+      hair,
+      clothing,
+      features,
+      refinements,
+    });
+
+    try {
+      const response = await fetch("/api/sketch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ gender, age, hair, clothing, features, refinements }),
+      });
+
+      if (!response.ok) {
+        console.error("🟥 [page.tsx] /api/sketch returned non-OK:", response.status, response.statusText);
+        return "https://via.placeholder.com/512?text=Error+generating+sketch";
+      }
+
+      const data = await response.json();
+      return data.suspectSketchUrl || "https://via.placeholder.com/512?text=No+image+returned";
+    } catch (error) {
+      console.error("🟥 [page.tsx] generateSuspectSketch => error:", error);
+      return "https://via.placeholder.com/512?text=Error+generating+sketch";
+    }
+  }
+
+  /**
+   * The function call handler for "update_crime_report" and "generate_suspect_sketch"
+   * IMPORTANT: We ALWAYS return a JSON string, even if we do not recognize the function.
+   */
   const functionCallHandler = async (call: RequiredActionFunctionToolCall) => {
     console.log("🟨 [page.tsx] functionCallHandler invoked with call:", call);
 
     if (!call?.function?.name) {
       console.warn("🟨 [page.tsx] No function name provided in call");
-      return;
+      return JSON.stringify({
+        success: false,
+        message: "No function name was provided",
+      });
     }
 
     if (call.function.name === "update_crime_report") {
+      // --- Existing update_crime_report logic ---
       const args = JSON.parse(call.function.arguments) as CrimeReportData;
       console.log("🟨 [page.tsx] update_crime_report args:", args);
 
@@ -144,10 +201,35 @@ export default function Page() {
         message: "Crime report updated",
         updatedFields: args,
       });
+
+    } else if (call.function.name === "generate_suspect_sketch") {
+      // --- Our new suspect sketch logic ---
+      console.log("🟨 [page.tsx] generate_suspect_sketch called with arguments:", call.function.arguments);
+      const { gender, age, hair, clothing, features, refinements } = JSON.parse(call.function.arguments);
+
+      // 1) Call our secure /api/sketch route to generate the DALL-E image
+      const imageUrl = await generateSuspectSketch({ gender, age, hair, clothing, features, refinements });
+
+      // 2) Save the returned image in local state
+      setCrimeReport((prev) => ({
+        ...prev,
+        suspectSketchUrl: imageUrl,
+      }));
+
+      console.log("🟨 [page.tsx] Suspect sketch generated. Returning success JSON...");
+      return JSON.stringify({
+        success: true,
+        message: "Suspect sketch generated",
+        suspectSketchUrl: imageUrl,
+      });
     }
 
+    // If we reach here, the function name is unrecognized
     console.log("🟨 [page.tsx] No matching function for:", call.function.name);
-    return;
+    return JSON.stringify({
+      success: false,
+      message: `No matching function for: ${call.function.name}`,
+    });
   };
 
   return (
@@ -158,7 +240,7 @@ export default function Page() {
       </header>
 
       <div className={styles.chatContainer}>
-        {/* Pass initialMessages so the user sees your prompt at the start */}
+        {/* Pass initialMessages so user sees your detective prompt at the start */}
         <Chat functionCallHandler={functionCallHandler} initialMessages={initialMessages} />
       </div>
 
@@ -185,6 +267,18 @@ export default function Page() {
             <p>Hair: {crimeReport.suspect.hair || "N/A"}</p>
             <p>Clothing: {crimeReport.suspect.clothing || "N/A"}</p>
             <p>Features: {crimeReport.suspect.features || "N/A"}</p>
+          </div>
+        )}
+
+        {/* Display the suspect sketch if available */}
+        {crimeReport.suspectSketchUrl && (
+          <div style={{ marginTop: "1rem" }}>
+            <h4>Suspect Sketch</h4>
+            <img
+              src={crimeReport.suspectSketchUrl}
+              alt="Suspect Sketch"
+              style={{ maxWidth: "300px", border: "1px solid #ccc" }}
+            />
           </div>
         )}
 
