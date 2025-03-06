@@ -24,6 +24,7 @@ type ChatProps = {
   initialMessages?: InitialMessage[];
 };
 
+// USER MESSAGE
 const UserMessage = ({ text, timestamp }: { text: string; timestamp?: Date }) => (
   <div className={styles.userMessage}>
     <div className={styles.messageContent}>
@@ -35,9 +36,10 @@ const UserMessage = ({ text, timestamp }: { text: string; timestamp?: Date }) =>
   </div>
 );
 
+// ASSISTANT MESSAGE
 const AssistantMessage = ({ text, timestamp }: { text: string; timestamp?: Date }) => {
   return (
-    <div className={styles.assistantMessage} style={{ textAlign: "left" }}>
+    <div className={styles.assistantMessage} style={{ textAlign: 'left' }}>
       <img className={styles.avatarImage} src="/detective-avatar.png" alt="DetectiveGPT" />
       <div className={styles.messageContent}>
         <Markdown>{text}</Markdown>
@@ -79,7 +81,7 @@ export default function Chat({
 }: ChatProps) {
   const [userInput, setUserInput] = useState("");
   const [messages, setMessages] = useState<MessageProps[]>(
-    initialMessages.map((msg) => ({
+    initialMessages.map(msg => ({
       role: msg.role,
       text: msg.content,
       timestamp: new Date(),
@@ -96,21 +98,16 @@ export default function Chat({
 
   useEffect(scrollToBottom, [messages]);
 
-  // Create a new thread when component mounts
   useEffect(() => {
     const createThread = async () => {
-      console.log("🟨 [chat.tsx] Creating new thread...");
       const res = await fetch(`/api/assistants/threads`, { method: "POST" });
       const data = await res.json();
-      console.log("🟨 [chat.tsx] Created thread =>", data.threadId);
       setThreadId(data.threadId);
     };
     createThread();
   }, []);
 
-  // Send a user message
   const sendMessage = async (text: string) => {
-    console.log("🟨 [chat.tsx] sendMessage =>", text);
     const response = await fetch(`/api/assistants/threads/${threadId}/messages`, {
       method: "POST",
       body: JSON.stringify({ content: text }),
@@ -119,9 +116,7 @@ export default function Chat({
     handleReadableStream(stream);
   };
 
-  // Submit function call outputs
   const submitActionResult = async (runId: string, toolCallOutputs: any) => {
-    console.log("🟨 [chat.tsx] submitActionResult => runId:", runId, "toolCallOutputs:", toolCallOutputs);
     const response = await fetch(`/api/assistants/threads/${threadId}/actions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -131,12 +126,10 @@ export default function Chat({
     handleReadableStream(stream);
   };
 
-  // Form submit
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!userInput.trim()) return;
 
-    // Show user message
     setMessages((prev) => [
       ...prev,
       { role: "user", text: userInput, timestamp: new Date() },
@@ -147,34 +140,27 @@ export default function Chat({
     setInputDisabled(true);
   };
 
-  // Stream event handlers
+  // Streaming events
   const handleTextCreated = () => {
-    console.log("🟨 [chat.tsx] handleTextCreated => creating new assistant message...");
     appendMessage("assistant", "");
   };
 
   const handleTextDelta = (delta: any) => {
     if (delta.value != null) {
-      console.log("🟨 [chat.tsx] handleTextDelta => appending:", delta.value);
       appendToLastMessage(delta.value);
     }
   };
 
   const handleRunCompleted = () => {
-    console.log("🟨 [chat.tsx] handleRunCompleted => enabling input");
     setInputDisabled(false);
   };
 
   const handleRequiresAction = async (event: AssistantStreamEvent.ThreadRunRequiresAction) => {
-    console.log("🟨 [chat.tsx] handleRequiresAction =>", event);
     const runId = event.data.id;
     const toolCalls = event.data.required_action.submit_tool_outputs.tool_calls;
-    console.log("🟨 [chat.tsx] toolCalls =>", toolCalls);
 
-    // For each tool call, call functionCallHandler
     const toolCallOutputs = await Promise.all(
       toolCalls.map(async (toolCall) => {
-        console.log("🟨 [chat.tsx] calling functionCallHandler => toolCall:", toolCall);
         const result = await functionCallHandler(toolCall);
         return { output: result, tool_call_id: toolCall.id };
       })
@@ -184,29 +170,29 @@ export default function Chat({
     submitActionResult(runId, toolCallOutputs);
   };
 
-  // Attach stream listeners
   const handleReadableStream = (stream: AssistantStream) => {
-    console.log("🟨 [chat.tsx] handleReadableStream => attaching listeners...");
     stream.on("textCreated", handleTextCreated);
     stream.on("textDelta", handleTextDelta);
     stream.on("event", (event) => {
-      console.log("🟨 [chat.tsx] event =>", event);
       if (event.event === "thread.run.requires_action") handleRequiresAction(event);
       if (event.event === "thread.run.completed") handleRunCompleted();
     });
   };
 
-  // Utility to update messages
+  // Utility
   const appendToLastMessage = (text: string) => {
     setMessages((prev) => {
       const lastMessage = prev[prev.length - 1];
-      const updated = { ...lastMessage, text: lastMessage.text + text };
-      return [...prev.slice(0, -1), updated];
+      const updatedLastMessage = { ...lastMessage, text: lastMessage.text + text };
+      return [...prev.slice(0, -1), updatedLastMessage];
     });
   };
 
   const appendMessage = (role: "user" | "assistant" | "code", text: string) => {
-    setMessages((prev) => [...prev, { role, text, timestamp: new Date() }]);
+    setMessages((prev) => [
+      ...prev,
+      { role, text, timestamp: new Date() },
+    ]);
   };
 
   return (

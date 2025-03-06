@@ -7,14 +7,13 @@ import { RequiredActionFunctionToolCall } from "openai/resources/beta/threads/ru
 import jsPDF from "jspdf";
 import getVerifiedLocation from "./utils/getLocation";
 
-/**
- * Types for your data
- */
+/** Coordinates from geocoding */
 interface Coordinates {
   lat: number;
   lng: number;
 }
 
+/** Suspect details interface */
 interface SuspectDetails {
   gender?: string;
   age?: string;
@@ -23,11 +22,13 @@ interface SuspectDetails {
   features?: string;
 }
 
+/** Witness interface */
 interface Witness {
   name: string;
   contact?: string;
 }
 
+/** Extended CrimeReportData interface with new fields */
 interface CrimeReportData {
   crime_type?: string;
   datetime?: string;
@@ -36,42 +37,19 @@ interface CrimeReportData {
   suspect?: SuspectDetails;
 
   vehicles?: string[];
-  vehicle?: string; // unify to vehicles
+  vehicle?: string; // singular to be unified into vehicles
 
   weapon?: string;
   evidence?: string;
 
   cameras?: string[];
-  camera?: string; // unify to cameras
+  camera?: string; // singular to be unified into cameras
 
   injuries?: string;
   propertyDamage?: string;
 
   witnesses?: Witness[];
-  witness?: Witness; // unify to witnesses
-
-  // The record ID we store to update the same row
-  airtableRecordId?: string;
-
-  // We'll store the assigned "Case Number" from Airtable
-  caseNumber?: string;
-}
-
-/**
- * We'll fetch the route at /api/airtable to save/update the crime report
- */
-async function saveCrimeReportToAirtable(crimeReport: CrimeReportData) {
-  console.log("🔹 [saveCrimeReportToAirtable] Sending to /api/airtable =>", crimeReport);
-
-  const res = await fetch("/api/airtable", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(crimeReport),
-  });
-
-  const data = await res.json();
-  console.log("🔹 [saveCrimeReportToAirtable] Response =>", data);
-  return data; // { success, recordId, caseNumber, ... }
+  witness?: Witness; // singular to be unified into witnesses
 }
 
 export default function Page() {
@@ -90,9 +68,7 @@ export default function Page() {
 
   console.log("🟨 [Page] Rendered. Current crimeReport =>", crimeReport);
 
-  /**
-   * PDF generation (includes caseNumber)
-   */
+  // PDF generation with extended fields
   const downloadPDFReport = () => {
     console.log("🟨 [Page] Generating PDF...");
     const doc = new jsPDF();
@@ -111,11 +87,6 @@ export default function Page() {
       yPos += lineSpacing;
     };
 
-    // Case Number
-    if (crimeReport.caseNumber) {
-      addLine("Case Number", crimeReport.caseNumber);
-    }
-
     if (crimeReport.crime_type) addLine("Crime Type", crimeReport.crime_type);
     if (crimeReport.datetime) addLine("When", crimeReport.datetime);
     if (crimeReport.location) addLine("Location", crimeReport.location);
@@ -125,12 +96,12 @@ export default function Page() {
       addLine("Longitude", crimeReport.coordinates.lng.toString());
     }
 
-    // Vehicles
+    // Vehicles (array)
     if (crimeReport.vehicles && crimeReport.vehicles.length > 0) {
       addLine("Vehicles", crimeReport.vehicles.join(", "));
     }
 
-    // Suspect
+    // Suspect details
     if (crimeReport.suspect) {
       if (crimeReport.suspect.gender) addLine("Suspect Gender", crimeReport.suspect.gender);
       if (crimeReport.suspect.age) addLine("Suspect Age", crimeReport.suspect.age);
@@ -142,18 +113,15 @@ export default function Page() {
     if (crimeReport.weapon) addLine("Weapon", crimeReport.weapon);
     if (crimeReport.evidence) addLine("Evidence", crimeReport.evidence);
 
-    // Cameras
+    // Cameras (array)
     if (crimeReport.cameras && crimeReport.cameras.length > 0) {
       addLine("Cameras", crimeReport.cameras.join(", "));
     }
 
-    // Injuries
     if (crimeReport.injuries) addLine("Injuries", crimeReport.injuries);
-
-    // Property Damage
     if (crimeReport.propertyDamage) addLine("Property Damage", crimeReport.propertyDamage);
 
-    // Witnesses
+    // Witnesses (array)
     if (crimeReport.witnesses && crimeReport.witnesses.length > 0) {
       const witnessStr = crimeReport.witnesses
         .map((w) => (w.contact ? `${w.name} (${w.contact})` : w.name))
@@ -167,11 +135,7 @@ export default function Page() {
     doc.save("crime_report.pdf");
   };
 
-  /**
-   * The main function call handler for "update_crime_report"
-   * Merges new data, including location checks, unifies singular -> array, etc.
-   * Then calls /api/airtable to create/update & retrieve the "Case Number" & recordId
-   */
+  // Function call handler merging new fields with working Google location verification
   const functionCallHandler = async (call: RequiredActionFunctionToolCall) => {
     console.log("🟨 [Page] functionCallHandler => call:", call);
 
@@ -184,23 +148,32 @@ export default function Page() {
       const args = JSON.parse(call.function.arguments) as CrimeReportData;
       console.log("🟨 [Page] update_crime_report => parsed args:", args);
 
-      // Unify singular "vehicle" -> vehicles[]
+      // Unify singular "vehicle" to vehicles array
       if (args.vehicle) {
-        if (!args.vehicles) args.vehicles = [];
+        console.log("🟨 [Page] Found singular 'vehicle' =>", args.vehicle);
+        if (!args.vehicles) {
+          args.vehicles = [];
+        }
         args.vehicles.push(args.vehicle);
         delete args.vehicle;
       }
 
-      // Unify singular "camera" -> cameras[]
+      // Unify singular "camera" to cameras array
       if (args.camera) {
-        if (!args.cameras) args.cameras = [];
+        console.log("🟨 [Page] Found singular 'camera' =>", args.camera);
+        if (!args.cameras) {
+          args.cameras = [];
+        }
         args.cameras.push(args.camera);
         delete args.camera;
       }
 
-      // Unify singular "witness" -> witnesses[]
+      // Unify singular "witness" to witnesses array
       if (args.witness) {
-        if (!args.witnesses) args.witnesses = [];
+        console.log("🟨 [Page] Found singular 'witness' =>", args.witness);
+        if (!args.witnesses) {
+          args.witnesses = [];
+        }
         args.witnesses.push(args.witness);
         delete args.witness;
       }
@@ -214,7 +187,10 @@ export default function Page() {
             console.warn("🟨 [Page] getVerifiedLocation => not successful:", error);
           } else if (locationCandidates.length > 1) {
             console.log("🟨 [Page] Multiple location matches found, returning them to model...");
+            // Return them so ChatGPT can ask user to clarify
             return JSON.stringify({
+              // 1) Add "output" for Beta Tools
+              output: "Multiple location matches found. Please clarify location.",
               success: true,
               message: "Crime report updated, but multiple location matches found.",
               locationCandidates,
@@ -234,43 +210,21 @@ export default function Page() {
       setCrimeReport((prev) => ({ ...prev, ...args }));
       console.log("🟨 [Page] Crime report updated:", args);
 
-      // === SAVE/UPDATE TO /api/airtable AND GET RECORD ID + CASE NUMBER ===
-      // Pass the entire updated crimeReport so it includes airtableRecordId if present
-      const result = await saveCrimeReportToAirtable({
-        ...crimeReport,
-        ...args, // merges new data
+      // 2) Return "output" in the JSON
+      return JSON.stringify({
+        output: "Crime report updated successfully.",
+        success: true,
+        message: "Crime report updated",
+        updatedFields: args,
       });
-
-      if (result.success) {
-        console.log("🟨 [Page] Airtable save success => recordId:", result.recordId, "caseNumber:", result.caseNumber);
-        // Store the recordId & caseNumber in local state so next time we patch
-        setCrimeReport((prev) => ({
-          ...prev,
-          ...args,
-          airtableRecordId: result.recordId,
-          caseNumber: result.caseNumber,
-        }));
-
-        // Optionally return the caseNumber to the model
-        return JSON.stringify({
-          success: true,
-          message: "Crime report updated & saved to Airtable",
-          recordId: result.recordId,
-          caseNumber: result.caseNumber,
-          updatedFields: args,
-        });
-      } else {
-        console.error("❌ [Page] Error saving to Airtable:", result.error);
-        return JSON.stringify({
-          success: false,
-          message: "Crime report updated but failed to save to Airtable",
-          error: result.error,
-        });
-      }
     }
 
     console.log("🟨 [Page] No matching function for:", call.function.name);
-    return;
+    // Optionally add an output for no match
+    return JSON.stringify({
+      output: "No matching function found.",
+      success: false,
+    });
   };
 
   return (
@@ -286,32 +240,21 @@ export default function Page() {
 
       <div className={styles.crimeReportContainer}>
         <h3>Crime Report Summary</h3>
-
-        {/* Show the Case Number */}
-        {crimeReport.caseNumber && (
-          <p>
-            <strong>Case Number:</strong> {crimeReport.caseNumber}
-          </p>
-        )}
-
         {crimeReport.crime_type && (
           <p>
             <strong>Type:</strong> {crimeReport.crime_type}
           </p>
         )}
-
         {crimeReport.datetime && (
           <p>
             <strong>When:</strong> {crimeReport.datetime}
           </p>
         )}
-
         {crimeReport.location && (
           <p>
             <strong>Location:</strong> {crimeReport.location}
           </p>
         )}
-
         {crimeReport.coordinates && (
           <>
             <p>
@@ -322,13 +265,11 @@ export default function Page() {
             </p>
           </>
         )}
-
         {crimeReport.vehicles && crimeReport.vehicles.length > 0 && (
           <p>
             <strong>Vehicles:</strong> {crimeReport.vehicles.join(", ")}
           </p>
         )}
-
         {crimeReport.suspect && (
           <div>
             <strong>Suspect Details:</strong>
@@ -339,49 +280,31 @@ export default function Page() {
             {crimeReport.suspect.features && <p>Features: {crimeReport.suspect.features}</p>}
           </div>
         )}
-
         {crimeReport.weapon && (
           <p>
             <strong>Weapon:</strong> {crimeReport.weapon}
           </p>
         )}
-
         {crimeReport.evidence && (
           <p>
             <strong>Evidence:</strong> {crimeReport.evidence}
           </p>
         )}
-
         {crimeReport.cameras && crimeReport.cameras.length > 0 && (
           <p>
             <strong>Cameras:</strong> {crimeReport.cameras.join(", ")}
           </p>
         )}
-
         {crimeReport.injuries && (
           <p>
             <strong>Injuries:</strong> {crimeReport.injuries}
           </p>
         )}
-
         {crimeReport.propertyDamage && (
           <p>
             <strong>Property Damage:</strong> {crimeReport.propertyDamage}
           </p>
         )}
-
-        {crimeReport.witnesses && crimeReport.witnesses.length > 0 && (
-          <div>
-            <strong>Witnesses:</strong>
-            {crimeReport.witnesses.map((w, i) => (
-              <p key={i}>
-                {w.name}
-                {w.contact ? ` (Contact: ${w.contact})` : ""}
-              </p>
-            ))}
-          </div>
-        )}
-
         <button className="downloadButton" onClick={downloadPDFReport}>
           📥 Download PDF Report
         </button>
