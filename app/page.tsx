@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import styles from "./page.module.css";
-import Chat from "./components/chat";
+import Chat from "./components/chat"; // Adjust if needed
 import { RequiredActionFunctionToolCall } from "openai/resources/beta/threads/runs/runs";
 import jsPDF from "jspdf";
 import getVerifiedLocation from "./utils/getLocation";
@@ -32,19 +32,22 @@ interface CrimeReportData {
 }
 
 export default function Page() {
+  // Local state for your crime report
   const [crimeReport, setCrimeReport] = useState<CrimeReportData>({});
 
+  // Here is your initial system prompt (the first assistant message)
   const [initialMessages] = useState([
     {
       role: "assistant" as const,
       content:
-        "🚔 DetectiveGPT ready to take your statement about the incident. Please describe clearly what happened, including details about the suspect(s), vehicle(s), and any evidence.",
+        "I'm ready to take your statement about the incident. " +
+        "Please describe clearly what happened, including details about the suspect(s), vehicle(s), and any evidence.",
     },
   ]);
 
   console.log("🟨 [page.tsx] Rendered with crimeReport:", crimeReport);
 
-  // PDF
+  // PDF generation
   const downloadPDFReport = () => {
     console.log("🟨 [page.tsx] Generating PDF report...");
     const doc = new jsPDF();
@@ -73,7 +76,6 @@ export default function Page() {
     }
 
     addLine("Vehicle", crimeReport.vehicle || "N/A");
-
     if (crimeReport.suspect) {
       addLine("Suspect Gender", crimeReport.suspect.gender || "N/A");
       addLine("Suspect Age", crimeReport.suspect.age || "N/A");
@@ -91,42 +93,49 @@ export default function Page() {
     doc.save("official_crime_report.pdf");
   };
 
-  // function call handler
+  // The function call handler for "update_crime_report"
   const functionCallHandler = async (call: RequiredActionFunctionToolCall) => {
+    console.log("🟨 [page.tsx] functionCallHandler invoked with call:", call);
+
     if (!call?.function?.name) {
-      console.warn("🟨 [page.tsx] No function name in call");
+      console.warn("🟨 [page.tsx] No function name provided in call");
       return;
     }
-
-    console.log("🟨 [page.tsx] functionCallHandler invoked with call:", call);
 
     if (call.function.name === "update_crime_report") {
       const args = JSON.parse(call.function.arguments) as CrimeReportData;
       console.log("🟨 [page.tsx] update_crime_report args:", args);
 
-      // location logic
-      if (args.location) {
-        console.log("🟨 [page.tsx] Attempting to verify location:", args.location);
-        const { success, locationCandidates, singleResult, error } = await getVerifiedLocation(args.location);
+      // Attempt location verification in a try/catch so we never crash
+      try {
+        if (args.location) {
+          console.log("🟨 [page.tsx] Attempting to verify location:", args.location);
+          const { success, locationCandidates, singleResult, error } = await getVerifiedLocation(args.location);
 
-        if (!success) {
-          console.warn("🟨 [page.tsx] getVerifiedLocation => not success:", error);
-        } else if (locationCandidates.length > 1) {
-          console.log("🟨 [page.tsx] getVerifiedLocation => multiple matches, returning them...");
-          return JSON.stringify({
-            success: true,
-            message: "Crime report updated, but multiple location matches found.",
-            locationCandidates,
-            updatedFields: args,
-          });
-        } else if (singleResult) {
-          console.log("🟨 [page.tsx] getVerifiedLocation => single match:", singleResult);
-          args.coordinates = { lat: singleResult.lat, lng: singleResult.lng };
-          args.location = singleResult.formattedAddress;
+          if (!success) {
+            console.warn("🟨 [page.tsx] getVerifiedLocation => not success:", error);
+            // We'll keep partial info and not crash
+          } else if (locationCandidates.length > 1) {
+            console.log("🟨 [page.tsx] getVerifiedLocation => multiple matches, returning them to model...");
+            // Return them so ChatGPT can ask user to clarify
+            return JSON.stringify({
+              success: true,
+              message: "Crime report updated, but multiple location matches found.",
+              locationCandidates,
+              updatedFields: args,
+            });
+          } else if (singleResult) {
+            console.log("🟨 [page.tsx] getVerifiedLocation => single match:", singleResult);
+            args.coordinates = { lat: singleResult.lat, lng: singleResult.lng };
+            args.location = singleResult.formattedAddress;
+          }
         }
+      } catch (geoError) {
+        console.error("🟥 [page.tsx] Exception in geocoding:", geoError);
+        // We'll skip lat/lng but not crash
       }
 
-      // merge into state
+      // Merge new data into local state
       setCrimeReport((prev) => ({ ...prev, ...args }));
 
       console.log("🟨 [page.tsx] Crime report updated. Returning success JSON...");
@@ -149,6 +158,7 @@ export default function Page() {
       </header>
 
       <div className={styles.chatContainer}>
+        {/* Pass initialMessages so the user sees your prompt at the start */}
         <Chat functionCallHandler={functionCallHandler} initialMessages={initialMessages} />
       </div>
 
