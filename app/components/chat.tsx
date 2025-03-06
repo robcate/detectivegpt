@@ -24,24 +24,26 @@ type ChatProps = {
   initialMessages?: InitialMessage[];
 };
 
+// USER MESSAGE
 const UserMessage = ({ text, timestamp }: { text: string; timestamp?: Date }) => (
   <div className={styles.userMessage}>
     <div className={styles.messageContent}>
       {text}
-      <div className={styles.timestamp}>
+      <div className={styles.timestamp} suppressHydrationWarning>
         {(timestamp || new Date()).toLocaleTimeString()}
       </div>
     </div>
   </div>
 );
 
+// ASSISTANT MESSAGE
 const AssistantMessage = ({ text, timestamp }: { text: string; timestamp?: Date }) => {
   return (
     <div className={styles.assistantMessage} style={{ textAlign: 'left' }}>
       <img className={styles.avatarImage} src="/detective-avatar.png" alt="DetectiveGPT" />
       <div className={styles.messageContent}>
         <Markdown>{text}</Markdown>
-        <div className={styles.timestamp}>
+        <div className={styles.timestamp} suppressHydrationWarning>
           {(timestamp || new Date()).toLocaleTimeString()}
         </div>
       </div>
@@ -73,16 +75,18 @@ const Message = ({ role, text, timestamp }: MessageProps) => {
   }
 };
 
-const Chat = ({
+export default function Chat({
   functionCallHandler = () => Promise.resolve(""),
   initialMessages = [],
-}: ChatProps) => {
+}: ChatProps) {
   const [userInput, setUserInput] = useState("");
-  const [messages, setMessages] = useState<MessageProps[]>(initialMessages.map(msg => ({
-    role: msg.role,
-    text: msg.content,
-    timestamp: new Date(),
-  })));
+  const [messages, setMessages] = useState<MessageProps[]>(
+    initialMessages.map(msg => ({
+      role: msg.role,
+      text: msg.content,
+      timestamp: new Date(),
+    }))
+  );
   const [inputDisabled, setInputDisabled] = useState(false);
   const [threadId, setThreadId] = useState("");
 
@@ -126,8 +130,8 @@ const Chat = ({
     e.preventDefault();
     if (!userInput.trim()) return;
 
-    setMessages((prevMessages) => [
-      ...prevMessages,
+    setMessages((prev) => [
+      ...prev,
       { role: "user", text: userInput, timestamp: new Date() },
     ]);
 
@@ -136,6 +140,7 @@ const Chat = ({
     setInputDisabled(true);
   };
 
+  // Streaming events
   const handleTextCreated = () => {
     appendMessage("assistant", "");
   };
@@ -174,17 +179,18 @@ const Chat = ({
     });
   };
 
+  // Utility
   const appendToLastMessage = (text: string) => {
-    setMessages((prevMessages) => {
-      const lastMessage = prevMessages[prevMessages.length - 1];
+    setMessages((prev) => {
+      const lastMessage = prev[prev.length - 1];
       const updatedLastMessage = { ...lastMessage, text: lastMessage.text + text };
-      return [...prevMessages.slice(0, -1), updatedLastMessage];
+      return [...prev.slice(0, -1), updatedLastMessage];
     });
   };
 
   const appendMessage = (role: "user" | "assistant" | "code", text: string) => {
-    setMessages((prevMessages) => [
-      ...prevMessages,
+    setMessages((prev) => [
+      ...prev,
       { role, text, timestamp: new Date() },
     ]);
   };
@@ -211,6 +217,4 @@ const Chat = ({
       </form>
     </div>
   );
-};
-
-export default Chat;
+}
