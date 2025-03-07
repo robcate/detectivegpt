@@ -27,60 +27,9 @@ type ChatProps = {
   initialMessages?: InitialMessage[];
 };
 
-// USER MESSAGE
-const UserMessage = ({ text, timestamp }: { text: string; timestamp?: Date }) => (
-  <div className={styles.userMessage}>
-    <div className={styles.messageContent}>
-      {text}
-      <div className={styles.timestamp} suppressHydrationWarning>
-        {(timestamp || new Date()).toLocaleTimeString()}
-      </div>
-    </div>
-  </div>
-);
-
-// ASSISTANT MESSAGE
-const AssistantMessage = ({ text, timestamp }: { text: string; timestamp?: Date }) => {
-  return (
-    <div className={styles.assistantMessage} style={{ textAlign: "left" }}>
-      <img className={styles.avatarImage} src="/detective-avatar.png" alt="DetectiveGPT" />
-      <div className={styles.messageContent}>
-        <Markdown>{text}</Markdown>
-        <div className={styles.timestamp} suppressHydrationWarning>
-          {(timestamp || new Date()).toLocaleTimeString()}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// CODE MESSAGE
-const CodeMessage = ({ text }: { text: string }) => (
-  <div className={styles.codeMessage}>
-    {text.split("\n").map((line, index) => (
-      <div key={index}>
-        <span>{`${index + 1}. `}</span>
-        {line}
-      </div>
-    ))}
-  </div>
-);
-
-const Message = ({ role, text, timestamp }: MessageProps) => {
-  switch (role) {
-    case "user":
-      return <UserMessage text={text} timestamp={timestamp || new Date()} />;
-    case "assistant":
-      return <AssistantMessage text={text} timestamp={timestamp || new Date()} />;
-    case "code":
-      return <CodeMessage text={text} />;
-    default:
-      return null;
-  }
-};
-
 /**
- * A helper to POST files to /api/evidence
+ * Helper to POST files to /api/evidence
+ * This is your local file upload endpoint.
  */
 async function uploadEvidence(files: FileList) {
   const formData = new FormData();
@@ -96,6 +45,70 @@ async function uploadEvidence(files: FileList) {
   return data; // { success: boolean, fileUrls: string[] }
 }
 
+/**
+ * UserMessage: displayed on the right side (blue background)
+ */
+const UserMessage = ({ text, timestamp }: { text: string; timestamp?: Date }) => (
+  <div className={styles.userMessage}>
+    <div className={styles.messageContent}>
+      {text}
+      <div className={styles.timestamp} suppressHydrationWarning>
+        {(timestamp || new Date()).toLocaleTimeString()}
+      </div>
+    </div>
+  </div>
+);
+
+/**
+ * AssistantMessage: displayed on the left side (gray background)
+ */
+const AssistantMessage = ({ text, timestamp }: { text: string; timestamp?: Date }) => {
+  return (
+    <div className={styles.assistantMessage} style={{ textAlign: "left" }}>
+      <img className={styles.avatarImage} src="/detective-avatar.png" alt="DetectiveGPT" />
+      <div className={styles.messageContent}>
+        <Markdown>{text}</Markdown>
+        <div className={styles.timestamp} suppressHydrationWarning>
+          {(timestamp || new Date()).toLocaleTimeString()}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/**
+ * CodeMessage: displayed with a monospace background
+ */
+const CodeMessage = ({ text }: { text: string }) => (
+  <div className={styles.codeMessage}>
+    {text.split("\n").map((line, index) => (
+      <div key={index}>
+        <span>{`${index + 1}. `}</span>
+        {line}
+      </div>
+    ))}
+  </div>
+);
+
+/**
+ * A single message switcher
+ */
+const Message = ({ role, text, timestamp }: MessageProps) => {
+  switch (role) {
+    case "user":
+      return <UserMessage text={text} timestamp={timestamp || new Date()} />;
+    case "assistant":
+      return <AssistantMessage text={text} timestamp={timestamp || new Date()} />;
+    case "code":
+      return <CodeMessage text={text} />;
+    default:
+      return null;
+  }
+};
+
+/**
+ * The main Chat component
+ */
 export default function Chat({
   functionCallHandler = () => Promise.resolve(""),
   initialMessages = [],
@@ -125,8 +138,10 @@ export default function Chat({
   // Create a new thread on mount
   useEffect(() => {
     const createThread = async () => {
+      console.log("🟨 [chat.tsx] Creating new thread...");
       const res = await fetch(`/api/assistants/threads`, { method: "POST" });
       const data = await res.json();
+      console.log("🟨 [chat.tsx] Created thread =>", data.threadId);
       setThreadId(data.threadId);
     };
     createThread();
@@ -136,6 +151,7 @@ export default function Chat({
    * Standard user text message flow
    */
   const sendMessage = async (text: string) => {
+    console.log("🟨 [chat.tsx] sendMessage =>", text);
     const response = await fetch(`/api/assistants/threads/${threadId}/messages`, {
       method: "POST",
       body: JSON.stringify({ content: text }),
@@ -148,6 +164,7 @@ export default function Chat({
    * If the AI calls a function, we handle the result
    */
   const submitActionResult = async (runId: string, toolCallOutputs: any) => {
+    console.log("🟨 [chat.tsx] submitActionResult => runId:", runId, "toolCallOutputs:", toolCallOutputs);
     const response = await fetch(`/api/assistants/threads/${threadId}/actions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -164,6 +181,7 @@ export default function Chat({
     e.preventDefault();
     if (!userInput.trim()) return;
 
+    // Show user message
     setMessages((prev) => [
       ...prev,
       { role: "user", text: userInput, timestamp: new Date() },
@@ -185,6 +203,7 @@ export default function Chat({
 
   /**
    * On "Upload" click for the chosen files
+   * (the TypeScript fix is in the toolCall object)
    */
   const handleUploadEvidence = async () => {
     if (!attachFiles || attachFiles.length === 0) return;
@@ -202,8 +221,10 @@ export default function Chat({
 
     const evidenceString = data.fileUrls.join(", ");
 
-    // Now call update_crime_report
+    // Build the tool call with required properties: id, type, function
     const toolCall: RequiredActionFunctionToolCall = {
+      id: "local-evidence-upload",
+      type: "function_call",
       function: {
         name: "update_crime_report",
         arguments: JSON.stringify({ evidence: evidenceString }),
@@ -232,25 +253,32 @@ export default function Chat({
    * Streaming events
    */
   const handleTextCreated = () => {
+    console.log("🟨 [chat.tsx] handleTextCreated => creating new assistant message...");
     appendMessage("assistant", "");
   };
 
   const handleTextDelta = (delta: any) => {
     if (delta.value != null) {
+      console.log("🟨 [chat.tsx] handleTextDelta => appending:", delta.value);
       appendToLastMessage(delta.value);
     }
   };
 
   const handleRunCompleted = () => {
+    console.log("🟨 [chat.tsx] handleRunCompleted => enabling input");
     setInputDisabled(false);
   };
 
   const handleRequiresAction = async (event: AssistantStreamEvent.ThreadRunRequiresAction) => {
+    console.log("🟨 [chat.tsx] handleRequiresAction =>", event);
     const runId = event.data.id;
     const toolCalls = event.data.required_action.submit_tool_outputs.tool_calls;
+    console.log("🟨 [chat.tsx] toolCalls =>", toolCalls);
 
+    // For each tool call, call functionCallHandler
     const toolCallOutputs = await Promise.all(
       toolCalls.map(async (toolCall) => {
+        console.log("🟨 [chat.tsx] calling functionCallHandler => toolCall:", toolCall);
         const result = await functionCallHandler(toolCall);
         return { output: result, tool_call_id: toolCall.id };
       })
@@ -260,10 +288,15 @@ export default function Chat({
     submitActionResult(runId, toolCallOutputs);
   };
 
+  /**
+   * Attach the stream listeners
+   */
   const handleReadableStream = (stream: AssistantStream) => {
+    console.log("🟨 [chat.tsx] handleReadableStream => attaching listeners...");
     stream.on("textCreated", handleTextCreated);
     stream.on("textDelta", handleTextDelta);
     stream.on("event", (event) => {
+      console.log("🟨 [chat.tsx] event =>", event);
       if (event.event === "thread.run.requires_action") handleRequiresAction(event);
       if (event.event === "thread.run.completed") handleRunCompleted();
     });
@@ -300,8 +333,7 @@ export default function Chat({
       <form onSubmit={handleSubmit} className={styles.inputForm}>
         {/* A plus icon label referencing the hidden file input */}
         <label htmlFor="attachInput" className={styles.plusButton} title="Attach Evidence">
-          {/* The plus icon, e.g. plus-icon.png in /public */}
-          <img src="/plus-icon.svg" alt="Attach" style={{ width: 24, height: 24 }} />
+          <img src="/plus-icon.svg" alt="Attach" />
         </label>
         <input
           id="attachInput"
