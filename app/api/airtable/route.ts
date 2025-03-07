@@ -1,4 +1,3 @@
-// app/api/airtable/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import axios from "axios";
 
@@ -10,15 +9,30 @@ const TABLE_NAME = "reports";
 function flattenCrimeReport(data: any) {
   console.log("🔹 [route.ts] Flattening crime report data for Airtable...");
 
-  return {
-    // NEW: Add "Incident Description" if you want it stored in Airtable
-    "Incident Description": data.incidentDescription || "N/A",
+  // 1) If data.evidence has comma-separated URLs, build an array of attachments
+  //    so Airtable can display them in an Attachment field named "Evidence"
+  let evidenceAttachments: { url: string }[] = [];
+  if (data.evidence) {
+    // e.g. "https://mydomain.com/uploads/abc.jpg, https://mydomain.com/uploads/xyz.mp4"
+    const splitted = data.evidence.split(",").map((s: string) => s.trim());
+    evidenceAttachments = splitted.map((url: string) => ({ url }));
+  }
 
+  return {
+    // (1) Crime Type
     "Crime Type": data.crime_type || "N/A",
+
+    // (2) Datetime
     "Datetime": data.datetime || "N/A",
+
+    // (3) Location
     "Location": data.location || "N/A",
+
+    // (4) Latitude / Longitude
     "Latitude": data.coordinates?.lat ?? 0,
     "Longitude": data.coordinates?.lng ?? 0,
+
+    // (5) Suspect
     "Suspect (Gender/Age/Hair/Clothing/Features)": data.suspect
       ? `Gender: ${data.suspect.gender || "N/A"}, Age: ${
           data.suspect.age || "N/A"
@@ -26,20 +40,42 @@ function flattenCrimeReport(data: any) {
           data.suspect.clothing || "N/A"
         }, Features: ${data.suspect.features || "N/A"}`
       : "N/A",
+
+    // (6) Vehicles
     "Vehicles":
-      data.vehicles && data.vehicles.length > 0 ? data.vehicles.join(", ") : "N/A",
+      data.vehicles && data.vehicles.length > 0
+        ? data.vehicles.join(", ")
+        : "N/A",
+
+    // (7) Cameras
     "Cameras":
-      data.cameras && data.cameras.length > 0 ? data.cameras.join(", ") : "N/A",
+      data.cameras && data.cameras.length > 0
+        ? data.cameras.join(", ")
+        : "N/A",
+
+    // (8) Injuries
     "Injuries": data.injuries || "N/A",
+
+    // (9) Property Damage
     "Property Damage": data.propertyDamage || "N/A",
+
+    // (10) Witnesses
     "Witnesses":
       data.witnesses && data.witnesses.length > 0
         ? data.witnesses
-            .map((w: any) => (w.contact ? `${w.name} (${w.contact})` : w.name))
+            .map((w: any) =>
+              w.contact ? `${w.name} (${w.contact})` : w.name
+            )
             .join("; ")
         : "N/A",
+
+    // (11) Weapon
     "Weapon": data.weapon || "N/A",
-    "Evidence": data.evidence || "N/A",
+
+    // (12) "Evidence" as an Attachment field
+    //      This replaces the old text-based line. 
+    //      Now we store the array of { url: string } attachments
+    "Evidence": evidenceAttachments,
   };
 }
 
@@ -101,14 +137,22 @@ export async function POST(request: NextRequest) {
       caseNumber = createdRecord.fields?.["Case Number"] || "N/A";
     }
 
-    console.log("🔹 [route.ts] Returning recordId:", recordId, "caseNumber:", caseNumber);
+    console.log(
+      "🔹 [route.ts] Returning recordId:",
+      recordId,
+      "caseNumber:",
+      caseNumber
+    );
     return NextResponse.json({
       success: true,
       recordId,
       caseNumber,
     });
   } catch (error: any) {
-    console.error("❌ [route.ts] Error creating/updating Airtable record:", error.message);
+    console.error(
+      "❌ [route.ts] Error creating/updating Airtable record:",
+      error.message
+    );
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 500 }

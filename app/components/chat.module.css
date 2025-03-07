@@ -1,18 +1,59 @@
+/* chat.module.css */
+
+/* Container for the entire chat (messages + input) */
 .chatContainer {
   display: flex;
-  flex-direction: column; /* ensures input is at the bottom */
+  flex-direction: column; /* ensures the input is at the bottom */
   height: 100%;
   width: 100%;
 }
 
-.inputForm {
-  display: flex;
-  width: 100%;
+/* The scrollable messages area */
+.messages {
+  flex-grow: 1;
+  overflow-y: auto;
   padding: 10px;
-  padding-bottom: 20px;
-  margin-top: auto;
+  display: flex;
+  flex-direction: column;
 }
 
+/* The form that holds the plus icon, text input, and send button */
+.inputForm {
+  display: flex;
+  align-items: center; /* center vertically */
+  width: 100%;
+  padding: 10px;
+  margin-top: auto;
+  background-color: #f9f9f9; /* optional background color */
+}
+
+/* The circular button containing the plus icon */
+.plusButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;  /* circle width */
+  height: 40px; /* circle height */
+  margin-right: 10px;
+  background-color: #efefef;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.plusButton:hover {
+  background-color: #e1e1e1;
+  border-color: #ccc;
+}
+
+/* The plus icon inside the circle */
+.plusButton img {
+  width: 20px;
+  height: 20px;
+}
+
+/* The main text input for typing messages */
 .input {
   flex-grow: 1;
   padding: 16px 24px;
@@ -26,35 +67,37 @@
 .input:focus {
   outline: none !important;
   border-color: #000;
-  background-color: white;
+  background-color: #fff;
 }
 
+/* The "Upload" and "Send" buttons */
 .button {
   padding: 8px 24px;
   background-color: #000;
-  color: white;
+  color: #fff;
   border: none;
   font-size: 1em;
   border-radius: 60px;
+  transition: background-color 0.2s;
+  cursor: pointer;
+}
+
+.button:hover {
+  background-color: #333;
 }
 
 .button:disabled {
   background-color: lightgrey;
+  cursor: not-allowed;
 }
 
-.messages {
-  flex-grow: 1;
-  overflow-y: auto;
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-}
+/* USER, ASSISTANT, AND CODE MESSAGES */
 
-.userMessage,
-.assistantMessage,
-.codeMessage {
-  display: flex;
-  align-items: flex-start;
+/* User messages (on the right, blue background) */
+.userMessage {
+  background-color: #2563eb;
+  color: #fff;
+  align-self: flex-end;
   margin: 8px 0;
   padding: 12px 16px;
   border-radius: 15px;
@@ -63,24 +106,33 @@
   position: relative;
 }
 
-.userMessage {
-  background-color: #2563eb;
-  color: #fff;
-  align-self: flex-end;
-}
-
+/* Assistant messages (on the left, gray background) */
 .assistantMessage {
   background-color: #f1f3f5;
   align-self: flex-start;
+  margin: 8px 0;
+  padding: 12px 16px;
+  border-radius: 15px;
+  max-width: 75%;
+  overflow-wrap: break-word;
+  position: relative;
 }
 
+/* Code messages (monospace, slightly different gray) */
 .codeMessage {
   font-family: monospace;
   background-color: #e9e9e9;
   flex-direction: column;
   align-self: flex-start;
+  margin: 8px 0;
+  padding: 12px 16px;
+  border-radius: 15px;
+  max-width: 75%;
+  overflow-wrap: break-word;
+  position: relative;
 }
 
+/* The detective avatar image */
 .avatarImage {
   width: 40px;
   height: 40px;
@@ -88,11 +140,13 @@
   margin-right: 10px;
 }
 
+/* The message content container (text + timestamp) */
 .messageContent {
   display: flex;
   flex-direction: column;
 }
 
+/* The small timestamp below each message */
 .timestamp {
   font-size: 11px;
   color: rgba(0,0,0,0.6);
@@ -101,6 +155,7 @@
   font-weight: 500;
 }
 
+/* Example fade-in animation for analysis messages (if used) */
 .analysisMessage {
   font-size: 14px;
   color: #777;

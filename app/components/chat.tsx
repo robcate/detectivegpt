@@ -8,6 +8,9 @@ import Markdown from "react-markdown";
 import { AssistantStreamEvent } from "openai/resources/beta/assistants/assistants";
 import { RequiredActionFunctionToolCall } from "openai/resources/beta/threads/runs/runs";
 
+/** 
+ * Type definitions
+ */
 type MessageProps = {
   role: "user" | "assistant" | "code";
   text: string;
@@ -39,7 +42,7 @@ const UserMessage = ({ text, timestamp }: { text: string; timestamp?: Date }) =>
 // ASSISTANT MESSAGE
 const AssistantMessage = ({ text, timestamp }: { text: string; timestamp?: Date }) => {
   return (
-    <div className={styles.assistantMessage} style={{ textAlign: 'left' }}>
+    <div className={styles.assistantMessage} style={{ textAlign: "left" }}>
       <img className={styles.avatarImage} src="/detective-avatar.png" alt="DetectiveGPT" />
       <div className={styles.messageContent}>
         <Markdown>{text}</Markdown>
@@ -51,6 +54,7 @@ const AssistantMessage = ({ text, timestamp }: { text: string; timestamp?: Date 
   );
 };
 
+// CODE MESSAGE
 const CodeMessage = ({ text }: { text: string }) => (
   <div className={styles.codeMessage}>
     {text.split("\n").map((line, index) => (
@@ -75,13 +79,30 @@ const Message = ({ role, text, timestamp }: MessageProps) => {
   }
 };
 
+/**
+ * A helper to POST files to /api/evidence
+ */
+async function uploadEvidence(files: FileList) {
+  const formData = new FormData();
+  for (let i = 0; i < files.length; i++) {
+    formData.append("files", files[i]);
+  }
+
+  const res = await fetch("/api/evidence", {
+    method: "POST",
+    body: formData,
+  });
+  const data = await res.json();
+  return data; // { success: boolean, fileUrls: string[] }
+}
+
 export default function Chat({
   functionCallHandler = () => Promise.resolve(""),
   initialMessages = [],
 }: ChatProps) {
   const [userInput, setUserInput] = useState("");
   const [messages, setMessages] = useState<MessageProps[]>(
-    initialMessages.map(msg => ({
+    initialMessages.map((msg) => ({
       role: msg.role,
       text: msg.content,
       timestamp: new Date(),
@@ -90,14 +111,18 @@ export default function Chat({
   const [inputDisabled, setInputDisabled] = useState(false);
   const [threadId, setThreadId] = useState("");
 
+  // Local state for file attachments
+  const [attachFiles, setAttachFiles] = useState<FileList | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
+  // Scroll to bottom whenever messages change
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
-
   useEffect(scrollToBottom, [messages]);
 
+  // Create a new thread on mount
   useEffect(() => {
     const createThread = async () => {
       const res = await fetch(`/api/assistants/threads`, { method: "POST" });
@@ -107,6 +132,9 @@ export default function Chat({
     createThread();
   }, []);
 
+  /**
+   * Standard user text message flow
+   */
   const sendMessage = async (text: string) => {
     const response = await fetch(`/api/assistants/threads/${threadId}/messages`, {
       method: "POST",
@@ -116,6 +144,9 @@ export default function Chat({
     handleReadableStream(stream);
   };
 
+  /**
+   * If the AI calls a function, we handle the result
+   */
   const submitActionResult = async (runId: string, toolCallOutputs: any) => {
     const response = await fetch(`/api/assistants/threads/${threadId}/actions`, {
       method: "POST",
@@ -126,6 +157,9 @@ export default function Chat({
     handleReadableStream(stream);
   };
 
+  /**
+   * On user text form submit
+   */
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!userInput.trim()) return;
@@ -140,7 +174,63 @@ export default function Chat({
     setInputDisabled(true);
   };
 
-  // Streaming events
+  /**
+   * On file selection
+   */
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      setAttachFiles(e.target.files);
+    }
+  };
+
+  /**
+   * On "Upload" click for the chosen files
+   */
+  const handleUploadEvidence = async () => {
+    if (!attachFiles || attachFiles.length === 0) return;
+    setInputDisabled(true);
+
+    console.log("🟨 [chat.tsx] handleUploadEvidence => uploading files...");
+    const data = await uploadEvidence(attachFiles);
+    console.log("🟨 [chat.tsx] handleUploadEvidence =>", data);
+
+    if (!data.success) {
+      alert("Evidence upload failed: " + data.error);
+      setInputDisabled(false);
+      return;
+    }
+
+    const evidenceString = data.fileUrls.join(", ");
+
+    // Now call update_crime_report
+    const toolCall: RequiredActionFunctionToolCall = {
+      function: {
+        name: "update_crime_report",
+        arguments: JSON.stringify({ evidence: evidenceString }),
+      },
+    };
+
+    console.log("🟨 [chat.tsx] Updating crime report =>", toolCall);
+    await functionCallHandler(toolCall);
+
+    // Insert a user message showing the uploaded evidence
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "user",
+        text: `Uploaded evidence: ${evidenceString}`,
+        timestamp: new Date(),
+      },
+    ]);
+
+    alert("Evidence added to the report!");
+    setAttachFiles(null);
+    setInputDisabled(false);
+  };
+
+  /**
+   * Streaming events
+   */
   const handleTextCreated = () => {
     appendMessage("assistant", "");
   };
@@ -179,7 +269,9 @@ export default function Chat({
     });
   };
 
-  // Utility
+  /**
+   * Utility for streaming messages
+   */
   const appendToLastMessage = (text: string) => {
     setMessages((prev) => {
       const lastMessage = prev[prev.length - 1];
@@ -203,14 +295,45 @@ export default function Chat({
         ))}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* The main chat input row */}
       <form onSubmit={handleSubmit} className={styles.inputForm}>
+        {/* A plus icon label referencing the hidden file input */}
+        <label htmlFor="attachInput" className={styles.plusButton} title="Attach Evidence">
+          {/* The plus icon, e.g. plus-icon.png in /public */}
+          <img src="/plus-icon.svg" alt="Attach" style={{ width: 24, height: 24 }} />
+        </label>
+        <input
+          id="attachInput"
+          type="file"
+          multiple
+          accept="image/*,video/*"
+          style={{ display: "none" }}
+          onChange={handleFileChange}
+          disabled={inputDisabled}
+        />
+
         <input
           type="text"
           className={styles.input}
           value={userInput}
           onChange={(e) => setUserInput(e.target.value)}
           placeholder="Describe the incident"
+          disabled={inputDisabled}
         />
+
+        {/* If user selected files, show an "Upload" button */}
+        {attachFiles && attachFiles.length > 0 && (
+          <button
+            type="button"
+            className={styles.button}
+            onClick={handleUploadEvidence}
+            disabled={inputDisabled}
+          >
+            Upload
+          </button>
+        )}
+
         <button type="submit" className={styles.button} disabled={inputDisabled}>
           Send
         </button>
