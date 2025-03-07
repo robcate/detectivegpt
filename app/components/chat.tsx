@@ -205,49 +205,15 @@ export default function Chat({
    * On "Upload" click for the chosen files
    * (the TypeScript fix is in the toolCall object)
    */
-  const handleUploadEvidence = async () => {
-    if (!attachFiles || attachFiles.length === 0) return;
-    setInputDisabled(true);
-
-    console.log("🟨 [chat.tsx] handleUploadEvidence => uploading files...");
-    const data = await uploadEvidence(attachFiles);
-    console.log("🟨 [chat.tsx] handleUploadEvidence =>", data);
-
-    if (!data.success) {
-      alert("Evidence upload failed: " + data.error);
-      setInputDisabled(false);
-      return;
-    }
-
-    const evidenceString = data.fileUrls.join(", ");
-
-    // Build the tool call with required properties: id, type, function
-    const toolCall: RequiredActionFunctionToolCall = {
-      id: "local-evidence-upload",
-      type: "function_call",
-      function: {
-        name: "update_crime_report",
-        arguments: JSON.stringify({ evidence: evidenceString }),
-      },
-    };
-
-    console.log("🟨 [chat.tsx] Updating crime report =>", toolCall);
-    await functionCallHandler(toolCall);
-
-    // Insert a user message showing the uploaded evidence
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: "user",
-        text: `Uploaded evidence: ${evidenceString}`,
-        timestamp: new Date(),
-      },
-    ]);
-
-    alert("Evidence added to the report!");
-    setAttachFiles(null);
-    setInputDisabled(false);
+  const toolCall: RequiredActionFunctionToolCall = {
+    id: "local-evidence-upload",
+    type: "function",  // <--- changed here
+    function: {
+      name: "update_crime_report",
+      arguments: JSON.stringify({ evidence: evidenceString }),
+    },
   };
+
 
   /**
    * Streaming events
