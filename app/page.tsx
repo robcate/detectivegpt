@@ -13,7 +13,7 @@ interface Coordinates {
   lng: number;
 }
 
-/** Suspect details interface */
+/** Basic suspect details */
 interface SuspectDetails {
   gender?: string;
   age?: string;
@@ -22,13 +22,16 @@ interface SuspectDetails {
   features?: string;
 }
 
-/** Witness interface */
+/** Witness structure (name + optional contact) */
 interface Witness {
   name: string;
   contact?: string;
 }
 
-/** Extended CrimeReportData interface with new fields */
+/**
+ * CrimeReportData includes optional "incidentDescription" if you want it,
+ * plus "airtableRecordId" and "caseNumber" for updating the same row in Airtable.
+ */
 interface CrimeReportData {
   crime_type?: string;
   datetime?: string;
@@ -37,19 +40,45 @@ interface CrimeReportData {
   suspect?: SuspectDetails;
 
   vehicles?: string[];
-  vehicle?: string; // singular to be unified into vehicles
+  vehicle?: string; // unify to vehicles
 
   weapon?: string;
   evidence?: string;
 
   cameras?: string[];
-  camera?: string; // singular to be unified into cameras
+  camera?: string; // unify to cameras
 
   injuries?: string;
   propertyDamage?: string;
 
   witnesses?: Witness[];
-  witness?: Witness; // singular to be unified into witnesses
+  witness?: Witness; // unify to witnesses
+
+  // For storing a final "incidentDescription"
+  incidentDescription?: string;
+
+  // The record ID for updates
+  airtableRecordId?: string;
+
+  // The assigned "Case Number" from Airtable
+  caseNumber?: string;
+}
+
+/**
+ * We'll fetch the route at /api/airtable to save/update the crime report
+ */
+async function saveCrimeReportToAirtable(crimeReport: CrimeReportData) {
+  console.log("🔹 [saveCrimeReportToAirtable] Sending to /api/airtable =>", crimeReport);
+
+  const res = await fetch("/api/airtable", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(crimeReport),
+  });
+
+  const data = await res.json();
+  console.log("🔹 [saveCrimeReportToAirtable] Response =>", data);
+  return data; // { success, recordId, caseNumber, ... }
 }
 
 export default function Page() {
@@ -61,16 +90,18 @@ export default function Page() {
     {
       role: "assistant" as const,
       content:
-        "🚔 DetectiveGPT ready to take your statement about the incident. " +
+        "I'm ready to take your statement about the incident. " +
         "Please describe clearly what happened, including details about the suspect(s), vehicle(s), and any evidence.",
     },
   ]);
 
-  console.log("🟨 [Page] Rendered. Current crimeReport =>", crimeReport);
+  console.log("🟨 [page.tsx] Rendered. Current crimeReport =>", crimeReport);
 
-  // PDF generation with extended fields
+  /**
+   * PDF generation (includes caseNumber, etc.)
+   */
   const downloadPDFReport = () => {
-    console.log("🟨 [Page] Generating PDF...");
+    console.log("🟨 [page.tsx] Generating PDF...");
     const doc = new jsPDF();
     doc.setFontSize(18);
     doc.text("Detective GPT Crime Report", 105, 20, { align: "center" });
@@ -87,6 +118,15 @@ export default function Page() {
       yPos += lineSpacing;
     };
 
+    if (crimeReport.caseNumber) {
+      addLine("Case Number", crimeReport.caseNumber);
+    }
+
+    // If you have incidentDescription
+    if (crimeReport.incidentDescription) {
+      addLine("Incident Description", crimeReport.incidentDescription);
+    }
+
     if (crimeReport.crime_type) addLine("Crime Type", crimeReport.crime_type);
     if (crimeReport.datetime) addLine("When", crimeReport.datetime);
     if (crimeReport.location) addLine("Location", crimeReport.location);
@@ -96,12 +136,12 @@ export default function Page() {
       addLine("Longitude", crimeReport.coordinates.lng.toString());
     }
 
-    // Vehicles (array)
+    // Vehicles
     if (crimeReport.vehicles && crimeReport.vehicles.length > 0) {
       addLine("Vehicles", crimeReport.vehicles.join(", "));
     }
 
-    // Suspect details
+    // Suspect
     if (crimeReport.suspect) {
       if (crimeReport.suspect.gender) addLine("Suspect Gender", crimeReport.suspect.gender);
       if (crimeReport.suspect.age) addLine("Suspect Age", crimeReport.suspect.age);
@@ -113,15 +153,18 @@ export default function Page() {
     if (crimeReport.weapon) addLine("Weapon", crimeReport.weapon);
     if (crimeReport.evidence) addLine("Evidence", crimeReport.evidence);
 
-    // Cameras (array)
+    // Cameras
     if (crimeReport.cameras && crimeReport.cameras.length > 0) {
       addLine("Cameras", crimeReport.cameras.join(", "));
     }
 
+    // Injuries
     if (crimeReport.injuries) addLine("Injuries", crimeReport.injuries);
+
+    // Property Damage
     if (crimeReport.propertyDamage) addLine("Property Damage", crimeReport.propertyDamage);
 
-    // Witnesses (array)
+    // Witnesses
     if (crimeReport.witnesses && crimeReport.witnesses.length > 0) {
       const witnessStr = crimeReport.witnesses
         .map((w) => (w.contact ? `${w.name} (${w.contact})` : w.name))
@@ -135,22 +178,74 @@ export default function Page() {
     doc.save("crime_report.pdf");
   };
 
-  // Function call handler merging new fields with working Google location verification
+  /**
+   * The main function call handler
+   * - Summaries or approvals (optional)
+   * - Merges new data (update_crime_report)
+   * - Calls Airtable
+   */
   const functionCallHandler = async (call: RequiredActionFunctionToolCall) => {
-    console.log("🟨 [Page] functionCallHandler => call:", call);
+    console.log("🟨 [page.tsx] functionCallHandler => call:", call);
 
     if (!call?.function?.name) {
-      console.warn("🟨 [Page] No function name in call");
+      console.warn("🟨 [page.tsx] No function name in call");
       return;
     }
 
+    // #1 Summarize
+    if (call.function.name === "summarize_incident_description") {
+      const args = JSON.parse(call.function.arguments);
+      console.log("🟨 [page.tsx] Summarize => raw_description:", args.raw_description);
+
+      // The LLM will produce the summary in the next assistant message
+      return JSON.stringify({
+        output: "Summarize function called. The model will provide a formal summary next.",
+        success: true,
+      });
+    }
+
+    // #2 Approve
+    if (call.function.name === "approve_incident_description") {
+      const args = JSON.parse(call.function.arguments);
+      console.log("🟨 [page.tsx] Approve => final_summary:", args.final_summary);
+
+      // Merge final summary into local state
+      const merged = { ...crimeReport, incidentDescription: args.final_summary };
+      setCrimeReport(merged);
+      console.log("🟨 [page.tsx] Approved summary =>", merged.incidentDescription);
+
+      // Immediately save to Airtable so it's guaranteed to appear
+      const result = await saveCrimeReportToAirtable(merged);
+      if (result.success) {
+        console.log("🟨 [page.tsx] Airtable updated with final summary => recordId:", result.recordId);
+        setCrimeReport((prev) => ({
+          ...prev,
+          airtableRecordId: result.recordId,
+          caseNumber: result.caseNumber,
+        }));
+        return JSON.stringify({
+          output: "Incident description approved & saved to Airtable.",
+          success: true,
+          final_summary: args.final_summary,
+        });
+      } else {
+        console.error("❌ [page.tsx] Error saving final summary to Airtable:", result.error);
+        return JSON.stringify({
+          output: "Approved summary but failed to save to Airtable.",
+          success: false,
+          error: result.error,
+        });
+      }
+    }
+
+    // #3 update_crime_report
     if (call.function.name === "update_crime_report") {
       const args = JSON.parse(call.function.arguments) as CrimeReportData;
-      console.log("🟨 [Page] update_crime_report => parsed args:", args);
+      console.log("🟨 [page.tsx] update_crime_report => parsed args:", args);
 
-      // Unify singular "vehicle" to vehicles array
+      // Unify singular "vehicle" -> vehicles[]
       if (args.vehicle) {
-        console.log("🟨 [Page] Found singular 'vehicle' =>", args.vehicle);
+        console.log("🟨 [page.tsx] Found singular 'vehicle' =>", args.vehicle);
         if (!args.vehicles) {
           args.vehicles = [];
         }
@@ -158,9 +253,9 @@ export default function Page() {
         delete args.vehicle;
       }
 
-      // Unify singular "camera" to cameras array
+      // Unify singular "camera" -> cameras[]
       if (args.camera) {
-        console.log("🟨 [Page] Found singular 'camera' =>", args.camera);
+        console.log("🟨 [page.tsx] Found singular 'camera' =>", args.camera);
         if (!args.cameras) {
           args.cameras = [];
         }
@@ -168,9 +263,9 @@ export default function Page() {
         delete args.camera;
       }
 
-      // Unify singular "witness" to witnesses array
+      // Unify singular "witness" -> witnesses[]
       if (args.witness) {
-        console.log("🟨 [Page] Found singular 'witness' =>", args.witness);
+        console.log("🟨 [page.tsx] Found singular 'witness' =>", args.witness);
         if (!args.witnesses) {
           args.witnesses = [];
         }
@@ -181,15 +276,13 @@ export default function Page() {
       // Google location verification
       try {
         if (args.location) {
-          console.log("🟨 [Page] Attempting to verify location:", args.location);
+          console.log("🟨 [page.tsx] Attempting to verify location:", args.location);
           const { success, locationCandidates, singleResult, error } = await getVerifiedLocation(args.location);
           if (!success) {
-            console.warn("🟨 [Page] getVerifiedLocation => not successful:", error);
+            console.warn("🟨 [page.tsx] getVerifiedLocation => not successful:", error);
           } else if (locationCandidates.length > 1) {
-            console.log("🟨 [Page] Multiple location matches found, returning them to model...");
-            // Return them so ChatGPT can ask user to clarify
+            console.log("🟨 [page.tsx] Multiple location matches => returning them to model...");
             return JSON.stringify({
-              // 1) Add "output" for Beta Tools
               output: "Multiple location matches found. Please clarify location.",
               success: true,
               message: "Crime report updated, but multiple location matches found.",
@@ -197,30 +290,51 @@ export default function Page() {
               updatedFields: args,
             });
           } else if (singleResult) {
-            console.log("🟨 [Page] Single location match found:", singleResult);
+            console.log("🟨 [page.tsx] Single location match =>", singleResult);
             args.coordinates = { lat: singleResult.lat, lng: singleResult.lng };
             args.location = singleResult.formattedAddress;
           }
         }
       } catch (geoErr) {
-        console.error("🟥 [Page] Error verifying location:", geoErr);
+        console.error("🟥 [page.tsx] Error verifying location:", geoErr);
       }
 
-      // Merge new data into local state
-      setCrimeReport((prev) => ({ ...prev, ...args }));
-      console.log("🟨 [Page] Crime report updated:", args);
+      // Merge old + new so we keep airtableRecordId if we have it
+      const merged = { ...crimeReport, ...args };
+      setCrimeReport(merged);
+      console.log("🟨 [page.tsx] Crime report updated:", merged);
 
-      // 2) Return "output" in the JSON
-      return JSON.stringify({
-        output: "Crime report updated successfully.",
-        success: true,
-        message: "Crime report updated",
-        updatedFields: args,
-      });
+      // Save/Update to /api/airtable with the merged data
+      const result = await saveCrimeReportToAirtable(merged);
+
+      if (result.success) {
+        console.log("🟨 [page.tsx] Airtable save success => recordId:", result.recordId, "caseNumber:", result.caseNumber);
+        setCrimeReport((prev) => ({
+          ...prev,
+          airtableRecordId: result.recordId,
+          caseNumber: result.caseNumber,
+        }));
+
+        return JSON.stringify({
+          output: "Crime report updated & saved to Airtable successfully.",
+          success: true,
+          message: "Crime report updated & saved to Airtable",
+          recordId: result.recordId,
+          caseNumber: result.caseNumber,
+          updatedFields: merged,
+        });
+      } else {
+        console.error("❌ [page.tsx] Error saving to Airtable:", result.error);
+        return JSON.stringify({
+          output: "Crime report updated but failed to save to Airtable.",
+          success: false,
+          message: "Crime report updated but failed to save to Airtable",
+          error: result.error,
+        });
+      }
     }
 
-    console.log("🟨 [Page] No matching function for:", call.function.name);
-    // Optionally add an output for no match
+    console.log("🟨 [page.tsx] No matching function =>", call.function.name);
     return JSON.stringify({
       output: "No matching function found.",
       success: false,
@@ -240,21 +354,37 @@ export default function Page() {
 
       <div className={styles.crimeReportContainer}>
         <h3>Crime Report Summary</h3>
+
+        {crimeReport.caseNumber && (
+          <p>
+            <strong>Case Number:</strong> {crimeReport.caseNumber}
+          </p>
+        )}
+
+        {crimeReport.incidentDescription && (
+          <p>
+            <strong>Incident Description:</strong> {crimeReport.incidentDescription}
+          </p>
+        )}
+
         {crimeReport.crime_type && (
           <p>
             <strong>Type:</strong> {crimeReport.crime_type}
           </p>
         )}
+
         {crimeReport.datetime && (
           <p>
             <strong>When:</strong> {crimeReport.datetime}
           </p>
         )}
+
         {crimeReport.location && (
           <p>
             <strong>Location:</strong> {crimeReport.location}
           </p>
         )}
+
         {crimeReport.coordinates && (
           <>
             <p>
@@ -265,11 +395,13 @@ export default function Page() {
             </p>
           </>
         )}
+
         {crimeReport.vehicles && crimeReport.vehicles.length > 0 && (
           <p>
             <strong>Vehicles:</strong> {crimeReport.vehicles.join(", ")}
           </p>
         )}
+
         {crimeReport.suspect && (
           <div>
             <strong>Suspect Details:</strong>
@@ -280,31 +412,37 @@ export default function Page() {
             {crimeReport.suspect.features && <p>Features: {crimeReport.suspect.features}</p>}
           </div>
         )}
+
         {crimeReport.weapon && (
           <p>
             <strong>Weapon:</strong> {crimeReport.weapon}
           </p>
         )}
+
         {crimeReport.evidence && (
           <p>
             <strong>Evidence:</strong> {crimeReport.evidence}
           </p>
         )}
+
         {crimeReport.cameras && crimeReport.cameras.length > 0 && (
           <p>
             <strong>Cameras:</strong> {crimeReport.cameras.join(", ")}
           </p>
         )}
+
         {crimeReport.injuries && (
           <p>
             <strong>Injuries:</strong> {crimeReport.injuries}
           </p>
         )}
+
         {crimeReport.propertyDamage && (
           <p>
             <strong>Property Damage:</strong> {crimeReport.propertyDamage}
           </p>
         )}
+
         <button className="downloadButton" onClick={downloadPDFReport}>
           📥 Download PDF Report
         </button>

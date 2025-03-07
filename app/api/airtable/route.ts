@@ -11,13 +11,20 @@ function flattenCrimeReport(data: any) {
   console.log("🔹 [route.ts] Flattening crime report data for Airtable...");
 
   return {
+    // NEW: Add "Incident Description" if you want it stored in Airtable
+    "Incident Description": data.incidentDescription || "N/A",
+
     "Crime Type": data.crime_type || "N/A",
     "Datetime": data.datetime || "N/A",
     "Location": data.location || "N/A",
     "Latitude": data.coordinates?.lat ?? 0,
     "Longitude": data.coordinates?.lng ?? 0,
     "Suspect (Gender/Age/Hair/Clothing/Features)": data.suspect
-      ? `Gender: ${data.suspect.gender || "N/A"}, Age: ${data.suspect.age || "N/A"}, Hair: ${data.suspect.hair || "N/A"}, Clothing: ${data.suspect.clothing || "N/A"}, Features: ${data.suspect.features || "N/A"}`
+      ? `Gender: ${data.suspect.gender || "N/A"}, Age: ${
+          data.suspect.age || "N/A"
+        }, Hair: ${data.suspect.hair || "N/A"}, Clothing: ${
+          data.suspect.clothing || "N/A"
+        }, Features: ${data.suspect.features || "N/A"}`
       : "N/A",
     "Vehicles":
       data.vehicles && data.vehicles.length > 0 ? data.vehicles.join(", ") : "N/A",
