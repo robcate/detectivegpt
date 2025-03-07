@@ -1,4 +1,5 @@
 // app/api/airtable/route.ts
+
 import { NextRequest, NextResponse } from "next/server";
 import axios from "axios";
 
@@ -26,20 +27,20 @@ function flattenCrimeReport(data: any) {
           data.suspect.clothing || "N/A"
         }, Features: ${data.suspect.features || "N/A"}`
       : "N/A",
-    "Vehicles":
+    Vehicles:
       data.vehicles && data.vehicles.length > 0 ? data.vehicles.join(", ") : "N/A",
-    "Cameras":
+    Cameras:
       data.cameras && data.cameras.length > 0 ? data.cameras.join(", ") : "N/A",
-    "Injuries": data.injuries || "N/A",
+    Injuries: data.injuries || "N/A",
     "Property Damage": data.propertyDamage || "N/A",
-    "Witnesses":
+    Witnesses:
       data.witnesses && data.witnesses.length > 0
         ? data.witnesses
             .map((w: any) => (w.contact ? `${w.name} (${w.contact})` : w.name))
             .join("; ")
         : "N/A",
-    "Weapon": data.weapon || "N/A",
-    "Evidence": data.evidence || "N/A",
+    Weapon: data.weapon || "N/A",
+    Evidence: data.evidence || "N/A",
   };
 }
 
