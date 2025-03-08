@@ -221,7 +221,7 @@ export default function Page() {
       // -----------------------
       // TRANSLATION LOGIC BEGIN
       // -----------------------
-      async function translateToEnglish(text: string): Promise<string> {
+      const translateToEnglish = async (text: string): Promise<string> => {
         if (!text) return text; // skip empty
         try {
           console.log("🟨 [translateToEnglish] Sending text to /api/translate =>", text);
@@ -241,7 +241,7 @@ export default function Page() {
           console.error("❌ [translateToEnglish] Unexpected error =>", err);
           return text; // fallback
         }
-      }
+      };
 
       // Translate main fields
       if (args.crime_type) {
