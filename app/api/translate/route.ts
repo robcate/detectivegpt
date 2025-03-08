@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Translate } from "@google-cloud/translate";
+// ⬇ Import the v2 API instead of the old named export:
+import { v2 as Translate } from "@google-cloud/translate";
 
 // --------------------------------------------------------------------------------------
 // 🔹 YOUR EXISTING LOGS (FROM PREVIOUS CODE) CAN REMAIN AT THE TOP IF YOU WISH
@@ -37,10 +38,9 @@ try {
 }
 
 // --------------------------------------------------------------------------------------
-// 4) Initialize the Google Cloud Translate client
+// 4) Initialize the Google Cloud Translate client (v2)
 // --------------------------------------------------------------------------------------
-
-const translateClient = new Translate({
+const translateClient = new Translate.Translate({
   credentials: googleCreds,
   projectId: googleCreds.project_id,
 });
@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 6) Call Google Cloud Translate
+    // 6) Call Google Cloud Translate (v2)
     console.log(`🟨 [api/translate] Translating => "${text}" to => "${targetLang}"...`);
     const [translation] = await translateClient.translate(text, targetLang);
 
