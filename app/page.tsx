@@ -1,45 +1,20 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import styles from "./page.module.css";
 import Chat from "./components/chat";
 import { RequiredActionFunctionToolCall } from "openai/resources/beta/threads/runs/runs";
 import jsPDF from "jspdf";
 import getVerifiedLocation from "./utils/getLocation";
 
-/** 
- * We'll call our server route `/api/translate` to do the actual 
- * Google Cloud translation on the server side. 
+/**
+ * Types for your data
  */
-async function translateToEnglish(text: string): Promise<string> {
-  if (!text) return text; // no-op if empty
-  try {
-    console.log("🟨 [translateToEnglish] Sending text to /api/translate =>", text);
-    const res = await fetch("/api/translate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, targetLang: "en" }),
-    });
-    const data = await res.json();
-    if (!data.success) {
-      console.error("❌ [translateToEnglish] Translation failed:", data.error);
-      return text; // fallback to original
-    }
-    console.log("🟨 [translateToEnglish] Received translation =>", data.translation);
-    return data.translation;
-  } catch (err) {
-    console.error("❌ [translateToEnglish] Unexpected error =>", err);
-    return text; // fallback
-  }
-}
-
-/** Coordinates from geocoding */
 interface Coordinates {
   lat: number;
   lng: number;
 }
 
-/** Basic suspect details */
 interface SuspectDetails {
   gender?: string;
   age?: string;
@@ -48,16 +23,11 @@ interface SuspectDetails {
   features?: string;
 }
 
-/** Witness structure (name + optional contact) */
 interface Witness {
   name: string;
   contact?: string;
 }
 
-/** 
- * CrimeReportData includes all the fields we store,
- * plus "airtableRecordId" and "caseNumber" for updates.
- */
 interface CrimeReportData {
   crime_type?: string;
   datetime?: string;
@@ -66,29 +36,29 @@ interface CrimeReportData {
   suspect?: SuspectDetails;
 
   vehicles?: string[];
-  vehicle?: string; // unify to vehicles
+  vehicle?: string; // unify to vehicles[]
 
   weapon?: string;
   evidence?: string;
 
   cameras?: string[];
-  camera?: string; // unify to cameras
+  camera?: string; // unify to cameras[]
 
   injuries?: string;
   propertyDamage?: string;
 
   witnesses?: Witness[];
-  witness?: Witness; // unify to witnesses
+  witness?: Witness; // unify to witnesses[]
 
-  // For updating the same row in Airtable
+  // The record ID we store to update the same row
   airtableRecordId?: string;
 
-  // The assigned "Case Number" from Airtable
+  // We'll store the assigned "Case Number" from Airtable
   caseNumber?: string;
 }
 
-/** 
- * We'll fetch the route at /api/airtable to save/update the crime report.
+/**
+ * We'll fetch the route at /api/airtable to save/update the crime report
  */
 async function saveCrimeReportToAirtable(crimeReport: CrimeReportData) {
   console.log("🔹 [saveCrimeReportToAirtable] Sending to /api/airtable =>", crimeReport);
@@ -101,28 +71,33 @@ async function saveCrimeReportToAirtable(crimeReport: CrimeReportData) {
 
   const data = await res.json();
   console.log("🔹 [saveCrimeReportToAirtable] Response =>", data);
-  return data; // { success: boolean, recordId: string, caseNumber: string, ... }
+  return data; // { success, recordId, caseNumber, ... }
 }
 
 export default function Page() {
   // Local state for the crime report
   const [crimeReport, setCrimeReport] = useState<CrimeReportData>({});
 
-  // The initial assistant greeting in English:
+  // We also keep a ref that always has the latest crimeReport, so partial merges don’t overwrite fields
+  const crimeReportRef = useRef(crimeReport);
+  useEffect(() => {
+    crimeReportRef.current = crimeReport;
+  }, [crimeReport]);
+
+  // Initial system prompt
   const [initialMessages] = useState([
     {
       role: "assistant" as const,
       content:
-        "Hello, I'm Detective GPT. Please describe the incident in as much detail as possible. " +
-        "If you speak another language, I will respond in that language. However, " +
-        "all information is ultimately stored in English for official records.",
+        "🚔 DetectiveGPT ready to take your statement about the incident. " +
+        "Please describe clearly what happened, including details about the suspect(s), vehicle(s), and any evidence.",
     },
   ]);
 
   console.log("🟨 [Page] Rendered. Current crimeReport =>", crimeReport);
 
   /**
-   * PDF generation: includes caseNumber, etc.
+   * PDF generation (includes caseNumber)
    */
   const downloadPDFReport = () => {
     console.log("🟨 [Page] Generating PDF...");
@@ -142,23 +117,26 @@ export default function Page() {
       yPos += lineSpacing;
     };
 
+    // Case Number
     if (crimeReport.caseNumber) {
       addLine("Case Number", crimeReport.caseNumber);
     }
 
     if (crimeReport.crime_type) addLine("Crime Type", crimeReport.crime_type);
-    if (crimeReport.datetime) addLine("When", crimeReport.datetime || "N/A");
-    if (crimeReport.location) addLine("Location", crimeReport.location || "N/A");
+    if (crimeReport.datetime) addLine("When", crimeReport.datetime);
+    if (crimeReport.location) addLine("Location", crimeReport.location);
 
     if (crimeReport.coordinates) {
       addLine("Latitude", crimeReport.coordinates.lat.toString());
       addLine("Longitude", crimeReport.coordinates.lng.toString());
     }
 
+    // Vehicles
     if (crimeReport.vehicles && crimeReport.vehicles.length > 0) {
       addLine("Vehicles", crimeReport.vehicles.join(", "));
     }
 
+    // Suspect
     if (crimeReport.suspect) {
       if (crimeReport.suspect.gender) addLine("Suspect Gender", crimeReport.suspect.gender);
       if (crimeReport.suspect.age) addLine("Suspect Age", crimeReport.suspect.age);
@@ -170,13 +148,18 @@ export default function Page() {
     if (crimeReport.weapon) addLine("Weapon", crimeReport.weapon);
     if (crimeReport.evidence) addLine("Evidence", crimeReport.evidence);
 
+    // Cameras
     if (crimeReport.cameras && crimeReport.cameras.length > 0) {
       addLine("Cameras", crimeReport.cameras.join(", "));
     }
 
+    // Injuries
     if (crimeReport.injuries) addLine("Injuries", crimeReport.injuries);
+
+    // Property Damage
     if (crimeReport.propertyDamage) addLine("Property Damage", crimeReport.propertyDamage);
 
+    // Witnesses
     if (crimeReport.witnesses && crimeReport.witnesses.length > 0) {
       const witnessStr = crimeReport.witnesses
         .map((w) => (w.contact ? `${w.name} (${w.contact})` : w.name))
@@ -191,13 +174,17 @@ export default function Page() {
   };
 
   /**
-   * The main function call handler for "update_crime_report".
-   * We ensure fields are translated to English so the DB is consistent.
+   * The main function call handler for "update_crime_report"
+   * - Translates to English
+   * - Unifies singular->array fields
+   * - Merges partial updates
+   * - Verifies location
+   * - Saves to Airtable
    */
   const functionCallHandler = async (call: RequiredActionFunctionToolCall) => {
     console.log("🟨 [Page] functionCallHandler => call:", call);
 
-    // Always return a JSON string (OpenAI function calling spec).
+    // Return JSON if no function name
     if (!call?.function?.name) {
       console.warn("🟨 [Page] No function name in call");
       return JSON.stringify({
@@ -210,28 +197,53 @@ export default function Page() {
       const args = JSON.parse(call.function.arguments) as CrimeReportData;
       console.log("🟨 [Page] update_crime_report => parsed args:", args);
 
-      // 1) Unify singular -> arrays BEFORE translation
+      // Unify singular "vehicle" -> vehicles[]
       if (args.vehicle) {
-        console.log("🟨 [Page] Found singular 'vehicle' =>", args.vehicle);
         if (!args.vehicles) args.vehicles = [];
         args.vehicles.push(args.vehicle);
         delete args.vehicle;
       }
+
+      // Unify singular "camera" -> cameras[]
       if (args.camera) {
-        console.log("🟨 [Page] Found singular 'camera' =>", args.camera);
         if (!args.cameras) args.cameras = [];
         args.cameras.push(args.camera);
         delete args.camera;
       }
+
+      // Unify singular "witness" -> witnesses[]
       if (args.witness) {
-        console.log("🟨 [Page] Found singular 'witness' =>", args.witness);
         if (!args.witnesses) args.witnesses = [];
         args.witnesses.push(args.witness);
         delete args.witness;
       }
 
-      // 2) Translate everything to English
-      //    a) Simple strings
+      // -----------------------
+      // TRANSLATION LOGIC BEGIN
+      // -----------------------
+      async function translateToEnglish(text: string): Promise<string> {
+        if (!text) return text; // skip empty
+        try {
+          console.log("🟨 [translateToEnglish] Sending text to /api/translate =>", text);
+          const res = await fetch("/api/translate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text, targetLang: "en" }),
+          });
+          const data = await res.json();
+          if (!data.success) {
+            console.error("❌ [translateToEnglish] Translation failed:", data.error);
+            return text; // fallback
+          }
+          console.log("🟨 [translateToEnglish] Received translation =>", data.translation);
+          return data.translation;
+        } catch (err) {
+          console.error("❌ [translateToEnglish] Unexpected error =>", err);
+          return text; // fallback
+        }
+      }
+
+      // Translate main fields
       if (args.crime_type) {
         args.crime_type = await translateToEnglish(args.crime_type);
       }
@@ -254,23 +266,7 @@ export default function Page() {
         args.propertyDamage = await translateToEnglish(args.propertyDamage);
       }
 
-      //    b) Arrays (vehicles, cameras)
-      if (args.vehicles && args.vehicles.length > 0) {
-        const translatedVehicles: string[] = [];
-        for (const v of args.vehicles) {
-          translatedVehicles.push(await translateToEnglish(v));
-        }
-        args.vehicles = translatedVehicles;
-      }
-      if (args.cameras && args.cameras.length > 0) {
-        const translatedCameras: string[] = [];
-        for (const c of args.cameras) {
-          translatedCameras.push(await translateToEnglish(c));
-        }
-        args.cameras = translatedCameras;
-      }
-
-      //    c) Suspect details
+      // Translate suspect details
       if (args.suspect) {
         if (args.suspect.gender) {
           args.suspect.gender = await translateToEnglish(args.suspect.gender);
@@ -289,7 +285,7 @@ export default function Page() {
         }
       }
 
-      //    d) Witnesses (name + contact)
+      // Translate witnesses
       if (args.witnesses && args.witnesses.length > 0) {
         for (const witness of args.witnesses) {
           if (witness.name) {
@@ -300,8 +296,11 @@ export default function Page() {
           }
         }
       }
+      // -----------------------
+      // TRANSLATION LOGIC END
+      // -----------------------
 
-      // 3) Attempt location verification
+      // Attempt location verification (in English now)
       try {
         if (args.location) {
           console.log("🟨 [Page] Attempting to verify location:", args.location);
@@ -309,10 +308,14 @@ export default function Page() {
           if (!success) {
             console.warn("🟨 [Page] getVerifiedLocation => not successful:", error);
           } else if (locationCandidates.length > 1) {
-            console.log("🟨 [Page] Multiple location matches => returning them to model...");
+            // Merge partial fields so we don’t lose them
+            const partialMerged = { ...crimeReportRef.current, ...args };
+            setCrimeReport(partialMerged);
+            console.log("🟨 [Page] Partial update (multiple location matches) =>", partialMerged);
+
             return JSON.stringify({
               success: true,
-              message: "Crime report updated, but multiple location matches found.",
+              message: "Crime report updated partially, but multiple location matches found.",
               locationCandidates,
               updatedFields: args,
             });
@@ -326,23 +329,19 @@ export default function Page() {
         console.error("🟥 [Page] Error verifying location:", geoErr);
       }
 
-      // 4) Merge old + new so we keep airtableRecordId if we have it
-      const merged = { ...crimeReport, ...args };
+      // Merge new data into local state (use ref to avoid overwriting old fields)
+      const merged = { ...crimeReportRef.current, ...args };
       setCrimeReport(merged);
-      console.log("🟨 [Page] Crime report updated:", merged);
+      console.log("🟨 [Page] Crime report updated =>", merged);
 
-      // 5) Save/Update in Airtable
+      // Save/Update to Airtable
       const result = await saveCrimeReportToAirtable(merged);
+
       if (result.success) {
-        console.log(
-          "🟨 [Page] Airtable save success => recordId:",
-          result.recordId,
-          "caseNumber:",
-          result.caseNumber
-        );
+        console.log("🟨 [Page] Airtable save success => recordId:", result.recordId, "caseNumber:", result.caseNumber);
+        // Update local state with the new recordId & caseNumber
         setCrimeReport((prev) => ({
           ...prev,
-          ...args,
           airtableRecordId: result.recordId,
           caseNumber: result.caseNumber,
         }));
@@ -364,8 +363,7 @@ export default function Page() {
       }
     }
 
-    // If none match
-    console.log("🟨 [Page] No matching function =>", call.function.name);
+    console.log("🟨 [Page] No matching function for:", call.function.name);
     return JSON.stringify({
       success: false,
       message: "No matching function found.",
@@ -386,6 +384,7 @@ export default function Page() {
       <div className={styles.crimeReportContainer}>
         <h3>Crime Report Summary</h3>
 
+        {/* Show the Case Number */}
         {crimeReport.caseNumber && (
           <p>
             <strong>Case Number:</strong> {crimeReport.caseNumber}
@@ -466,6 +465,18 @@ export default function Page() {
           <p>
             <strong>Property Damage:</strong> {crimeReport.propertyDamage}
           </p>
+        )}
+
+        {crimeReport.witnesses && crimeReport.witnesses.length > 0 && (
+          <div>
+            <strong>Witnesses:</strong>
+            {crimeReport.witnesses.map((w, i) => (
+              <p key={i}>
+                {w.name}
+                {w.contact ? ` (Contact: ${w.contact})` : ""}
+              </p>
+            ))}
+          </div>
         )}
 
         <button className="downloadButton" onClick={downloadPDFReport}>

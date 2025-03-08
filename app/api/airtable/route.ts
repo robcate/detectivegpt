@@ -1,5 +1,3 @@
-// app/api/airtable/route.ts
-
 import { NextRequest, NextResponse } from "next/server";
 import axios from "axios";
 
@@ -11,37 +9,54 @@ const TABLE_NAME = "reports";
 function flattenCrimeReport(data: any) {
   console.log("🔹 [route.ts] Flattening crime report data for Airtable...");
 
-  return {
-    // NEW: Add "Incident Description" if you want it stored in Airtable
-    "Incident Description": data.incidentDescription || "N/A",
+  // We'll build an object of fields. Each key must match your actual column name in Airtable.
+  const fields: any = {};
 
-    "Crime Type": data.crime_type || "N/A",
-    "Datetime": data.datetime || "N/A",
-    "Location": data.location || "N/A",
-    "Latitude": data.coordinates?.lat ?? 0,
-    "Longitude": data.coordinates?.lng ?? 0,
-    "Suspect (Gender/Age/Hair/Clothing/Features)": data.suspect
-      ? `Gender: ${data.suspect.gender || "N/A"}, Age: ${
-          data.suspect.age || "N/A"
-        }, Hair: ${data.suspect.hair || "N/A"}, Clothing: ${
-          data.suspect.clothing || "N/A"
-        }, Features: ${data.suspect.features || "N/A"}`
-      : "N/A",
-    Vehicles:
-      data.vehicles && data.vehicles.length > 0 ? data.vehicles.join(", ") : "N/A",
-    Cameras:
-      data.cameras && data.cameras.length > 0 ? data.cameras.join(", ") : "N/A",
-    Injuries: data.injuries || "N/A",
-    "Property Damage": data.propertyDamage || "N/A",
-    Witnesses:
-      data.witnesses && data.witnesses.length > 0
-        ? data.witnesses
-            .map((w: any) => (w.contact ? `${w.name} (${w.contact})` : w.name))
-            .join("; ")
-        : "N/A",
-    Weapon: data.weapon || "N/A",
-    Evidence: data.evidence || "N/A",
-  };
+  // You can keep "Incident Description" if you want:
+  fields["Incident Description"] = data.incidentDescription || "N/A";
+
+  fields["Crime Type"] = data.crime_type || "N/A";
+  fields["Datetime"] = data.datetime || "N/A";
+  fields["Location"] = data.location || "N/A";
+  fields["Latitude"] = data.coordinates?.lat ?? 0;
+  fields["Longitude"] = data.coordinates?.lng ?? 0;
+
+  // Instead of a single "Suspect" text field, we have multiple columns now:
+  fields["Suspect Gender"] = data.suspect?.gender || "N/A";
+  fields["Suspect Age"] = data.suspect?.age || "N/A";
+  fields["Suspect Hair"] = data.suspect?.hair || "N/A";
+  fields["Suspect Clothing"] = data.suspect?.clothing || "N/A";
+  fields["Suspect Features"] = data.suspect?.features || "N/A";
+
+  // NEW COLUMNS for more structured data
+  fields["Suspect Height"] = data.suspect?.height || "N/A";
+  fields["Suspect Weight"] = data.suspect?.weight || "N/A";
+  fields["Suspect Tattoos"] = data.suspect?.tattoos || "N/A";
+  fields["Suspect Scars"] = data.suspect?.scars || "N/A";
+  fields["Suspect Accent"] = data.suspect?.accent || "N/A";
+
+  // Vehicles, Cameras, etc.
+  fields["Vehicles"] =
+    data.vehicles && data.vehicles.length > 0 ? data.vehicles.join(", ") : "N/A";
+  fields["Cameras"] =
+    data.cameras && data.cameras.length > 0 ? data.cameras.join(", ") : "N/A";
+
+  fields["Injuries"] = data.injuries || "N/A";
+  fields["Property Damage"] = data.propertyDamage || "N/A";
+
+  // Witnesses
+  if (data.witnesses && data.witnesses.length > 0) {
+    fields["Witnesses"] = data.witnesses
+      .map((w: any) => (w.contact ? `${w.name} (${w.contact})` : w.name))
+      .join("; ");
+  } else {
+    fields["Witnesses"] = "N/A";
+  }
+
+  fields["Weapon"] = data.weapon || "N/A";
+  fields["Evidence"] = data.evidence || "N/A";
+
+  return fields;
 }
 
 export async function POST(request: NextRequest) {
