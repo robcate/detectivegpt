@@ -6,16 +6,20 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "worker": "ts-node worker/transcriptionWorker.ts"
   },
   "dependencies": {
+    "@google-cloud/storage": "^7.15.2",
+    "@google-cloud/text-to-speech": "^5.8.1",
     "@google-cloud/translate": "^8.5.1",
     "@types/jspdf": "^2.0.0",
     "axios": "^1.8.1",
+    "bullmq": "^5.41.8",
     "dotenv": "^16.4.7",
     "jspdf": "^3.0.0",
     "next": "14.1.4",
-    "openai": "^4.46.0",
+    "openai": "^4.7.1",
     "react": "^18",
     "react-dom": "^18",
     "react-markdown": "^9.0.1"
@@ -23,7 +27,8 @@
   "devDependencies": {
     "@types/node": "20.12.7",
     "@types/react": "18.2.79",
-    "typescript": "5.4.5"
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
   },
   "prettier": {
     "singleQuote": false
