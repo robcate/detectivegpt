@@ -1,3 +1,10 @@
+/* chat.module.css */
+
+/* If you want to reference the global var, do:
+   max-width: var(--max-width);
+   etc.
+*/
+
 .chatContainer {
   display: flex;
   flex-direction: column; /* ensures input is at the bottom */
@@ -74,6 +81,15 @@
   align-self: flex-start;
 }
 
+/* Ensure images stay inside the .assistantMessage bubble */
+.assistantMessage img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin-top: 6px; 
+}
+
 .codeMessage {
   font-family: monospace;
   background-color: #e9e9e9;
@@ -113,3 +129,96 @@
   from { opacity: 0.5; }
   to { opacity: 1; }
 }
+
+/* Container styling */
+.main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  background-color: #f1f5f9;
+  font-family: Arial, sans-serif;
+  text-align: center;
+  padding: 20px;
+  min-height: 100vh;
+}
+
+/* Crime Report Summary */
+.crimeReport {
+  width: 90%;
+  max-width: 550px;
+  background-color: #fff;
+  padding: 20px;
+  margin: 20px auto;
+  border-radius: 16px;
+  box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+  text-align: left;
+}
+
+/* Chat Container */
+.chatContainer {
+  width: 100%;
+  max-width: 650px;
+  background: white;
+  padding: 16px;
+  border-radius: 16px;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+  height: 80vh; /* Utilize vertical space */
+  margin: 16px auto;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 768px) {
+  .chatContainer {
+    height: calc(100vh - 60px);
+    border-radius: 0;
+    box-shadow: none;
+  }
+}
+
+.inputContainer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 90%;
+  max-width: 550px;
+  margin-top: 20px;
+}
+
+.inputContainer input {
+  flex: 1;
+  padding: 12px;
+  border-radius: 8px;
+  border: 2px solid #ccc;
+  background: #f9f9f9;
+  font-size: 1rem;
+}
+
+.inputContainer button {
+  background-color: #2563eb;
+  color: white;
+  font-weight: bold;
+  padding: 10px 15px;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-left: 10px;
+}
+
+.inputContainer button:hover {
+  background-color: #1e40af;
+}
+
+@media (max-width: 768px) {
+  .main, .crimeReport, .chatContainer {
+    padding: 10px;
+    width: 100%;
+  }
+
+  .crimeReport {
+    font-size: 14px;
+  }
+}
+
+/* We omit :root or :global(:root) here to avoid Next.js CSS module errors. */
+

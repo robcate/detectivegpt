@@ -38,3 +38,4 @@ next-env.d.ts
 openai-v4.29.0-beta.1.tgz
 
 translate-key.json
+serviceAccountKey.json

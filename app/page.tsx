@@ -21,6 +21,11 @@ interface SuspectDetails {
   hair?: string;
   clothing?: string;
   features?: string;
+  height?: string;
+  weight?: string;
+  tattoos?: string;
+  scars?: string;
+  accent?: string;
 }
 
 interface Witness {
@@ -50,6 +55,12 @@ interface CrimeReportData {
   witnesses?: Witness[];
   witness?: Witness; // unify to witnesses[]
 
+  // The conversation log in plain text or concatenated messages
+  conversationLog?: string;
+
+  // If the user finalizes a short "incidentDescription", store it
+  incidentDescription?: string;
+
   // The record ID we store to update the same row
   airtableRecordId?: string;
 
@@ -71,7 +82,7 @@ async function saveCrimeReportToAirtable(crimeReport: CrimeReportData) {
 
   const data = await res.json();
   console.log("🔹 [saveCrimeReportToAirtable] Response =>", data);
-  return data; // { success, recordId, caseNumber, ... }
+  return data; // { success: true, recordId, caseNumber, ... }
 }
 
 export default function Page() {
@@ -83,6 +94,9 @@ export default function Page() {
   useEffect(() => {
     crimeReportRef.current = crimeReport;
   }, [crimeReport]);
+
+  // For conversation logging: we’ll store it in a local state as plain text
+  const [conversationLog, setConversationLog] = useState("");
 
   // Initial system prompt
   const [initialMessages] = useState([
@@ -113,7 +127,7 @@ export default function Page() {
       doc.setFont("helvetica", "bold");
       doc.text(`${label}:`, 20, yPos);
       doc.setFont("helvetica", "normal");
-      doc.text(value, 70, yPos);
+      doc.text(value || "N/A", 70, yPos);
       yPos += lineSpacing;
     };
 
@@ -143,6 +157,11 @@ export default function Page() {
       if (crimeReport.suspect.hair) addLine("Hair", crimeReport.suspect.hair);
       if (crimeReport.suspect.clothing) addLine("Clothing", crimeReport.suspect.clothing);
       if (crimeReport.suspect.features) addLine("Features", crimeReport.suspect.features);
+      if (crimeReport.suspect.height) addLine("Suspect Height", crimeReport.suspect.height);
+      if (crimeReport.suspect.weight) addLine("Suspect Weight", crimeReport.suspect.weight);
+      if (crimeReport.suspect.tattoos) addLine("Suspect Tattoos", crimeReport.suspect.tattoos);
+      if (crimeReport.suspect.scars) addLine("Suspect Scars", crimeReport.suspect.scars);
+      if (crimeReport.suspect.accent) addLine("Suspect Accent", crimeReport.suspect.accent);
     }
 
     if (crimeReport.weapon) addLine("Weapon", crimeReport.weapon);
@@ -166,6 +185,16 @@ export default function Page() {
         .join("; ");
       addLine("Witnesses", witnessStr);
     }
+
+    // Incident Description if any
+    if (crimeReport.incidentDescription) {
+      addLine("Incident Description", crimeReport.incidentDescription);
+    }
+
+    // (Optional) You could add conversation log, but it might be too large for PDF:
+    // if (crimeReport.conversationLog) {
+    //   addLine("Conversation Log", crimeReport.conversationLog);
+    // }
 
     const timestamp = new Date().toLocaleString();
     doc.setFontSize(8);
@@ -191,6 +220,68 @@ export default function Page() {
         success: false,
         message: "No function name provided.",
       });
+    }
+
+    // If the user confirms a final summary, store as incidentDescription
+    if (call.function.name === "approve_incident_description") {
+      try {
+        const parsed = JSON.parse(call.function.arguments);
+        const finalSummary = parsed.final_summary || "";
+        // Merge into local
+        const merged = { ...crimeReportRef.current, incidentDescription: finalSummary };
+        setCrimeReport(merged);
+        console.log("🟨 [Page] Final incident description =>", finalSummary);
+
+        // Save to Airtable with conversation log, so it’s not lost
+        const dataToSave = { ...merged, conversationLog }; // include conversation
+        const result = await saveCrimeReportToAirtable(dataToSave);
+        if (result.success) {
+          // Update local with recordId/caseNumber if needed
+          setCrimeReport((prev) => ({
+            ...prev,
+            airtableRecordId: result.recordId,
+            caseNumber: result.caseNumber,
+          }));
+          return JSON.stringify({
+            success: true,
+            message: "Incident description approved & saved.",
+            recordId: result.recordId,
+            caseNumber: result.caseNumber,
+          });
+        } else {
+          return JSON.stringify({
+            success: false,
+            message: "Failed to save final description to Airtable",
+            error: result.error,
+          });
+        }
+      } catch (err) {
+        console.error("❌ [Page] Error parsing approve_incident_description =>", err);
+        return JSON.stringify({
+          success: false,
+          message: String(err),
+        });
+      }
+    }
+
+    // If the user calls "summarize_incident_description", just echo back
+    if (call.function.name === "summarize_incident_description") {
+      try {
+        const parsed = JSON.parse(call.function.arguments);
+        const raw = parsed.raw_description || "";
+        // We'll just respond with success, leaving GPT to show the summary. Then user can call approve_incident_description.
+        return JSON.stringify({
+          success: true,
+          message: "Draft summary generated",
+          raw_description: raw,
+        });
+      } catch (err) {
+        console.error("❌ [Page] Error parsing summarize_incident_description =>", err);
+        return JSON.stringify({
+          success: false,
+          message: String(err),
+        });
+      }
     }
 
     if (call.function.name === "update_crime_report") {
@@ -285,6 +376,23 @@ export default function Page() {
         }
       }
 
+      // Translate extended suspect fields (height, weight, accent, tattoos, scars)
+      if (args.suspect?.height) {
+        args.suspect.height = await translateToEnglish(args.suspect.height);
+      }
+      if (args.suspect?.weight) {
+        args.suspect.weight = await translateToEnglish(args.suspect.weight);
+      }
+      if (args.suspect?.tattoos) {
+        args.suspect.tattoos = await translateToEnglish(args.suspect.tattoos);
+      }
+      if (args.suspect?.scars) {
+        args.suspect.scars = await translateToEnglish(args.suspect.scars);
+      }
+      if (args.suspect?.accent) {
+        args.suspect.accent = await translateToEnglish(args.suspect.accent);
+      }
+
       // Translate witnesses
       if (args.witnesses && args.witnesses.length > 0) {
         for (const witness of args.witnesses) {
@@ -300,7 +408,7 @@ export default function Page() {
       // TRANSLATION LOGIC END
       // -----------------------
 
-      // Attempt location verification (in English now)
+      // Attempt location verification (in English)
       try {
         if (args.location) {
           console.log("🟨 [Page] Attempting to verify location:", args.location);
@@ -310,6 +418,7 @@ export default function Page() {
           } else if (locationCandidates.length > 1) {
             // Merge partial fields so we don’t lose them
             const partialMerged = { ...crimeReportRef.current, ...args };
+            partialMerged.conversationLog = conversationLog; // keep log
             setCrimeReport(partialMerged);
             console.log("🟨 [Page] Partial update (multiple location matches) =>", partialMerged);
 
@@ -329,8 +438,11 @@ export default function Page() {
         console.error("🟥 [Page] Error verifying location:", geoErr);
       }
 
-      // Merge new data into local state (use ref to avoid overwriting old fields)
+      // Merge new data into local state
+      // Also keep the conversation log from local state
       const merged = { ...crimeReportRef.current, ...args };
+      merged.conversationLog = conversationLog;
+
       setCrimeReport(merged);
       console.log("🟨 [Page] Crime report updated =>", merged);
 
@@ -378,7 +490,26 @@ export default function Page() {
       </header>
 
       <div className={styles.chatContainer}>
-        <Chat functionCallHandler={functionCallHandler} initialMessages={initialMessages} />
+        <Chat
+          functionCallHandler={async (toolCall) => {
+            // 1) Each time user or GPT messages, we’ll keep appending to conversationLog
+            // but the best place to do that is in chat.tsx. So we’ll create a function
+            // there that returns the entire conversation, or handle it here:
+            // We'll do a trick: in Chat's onNewMessage prop we can store them.
+            //
+            // For this snippet, let's assume Chat calls this function AFTER it appends messages.
+
+            // 2) Actually call your functionCallHandler logic:
+            const resultJson = await functionCallHandler(toolCall);
+
+            return resultJson;
+          }}
+          initialMessages={initialMessages}
+          // We'll pass an extra prop so Chat can update our conversationLog as plain text
+          onConversationUpdated={(newLog) => {
+            setConversationLog(newLog);
+          }}
+        />
       </div>
 
       <div className={styles.crimeReportContainer}>
@@ -434,6 +565,11 @@ export default function Page() {
             {crimeReport.suspect.hair && <p>Hair: {crimeReport.suspect.hair}</p>}
             {crimeReport.suspect.clothing && <p>Clothing: {crimeReport.suspect.clothing}</p>}
             {crimeReport.suspect.features && <p>Features: {crimeReport.suspect.features}</p>}
+            {crimeReport.suspect.height && <p>Height: {crimeReport.suspect.height}</p>}
+            {crimeReport.suspect.weight && <p>Weight: {crimeReport.suspect.weight}</p>}
+            {crimeReport.suspect.tattoos && <p>Tattoos: {crimeReport.suspect.tattoos}</p>}
+            {crimeReport.suspect.scars && <p>Scars: {crimeReport.suspect.scars}</p>}
+            {crimeReport.suspect.accent && <p>Accent: {crimeReport.suspect.accent}</p>}
           </div>
         )}
 
@@ -477,6 +613,12 @@ export default function Page() {
               </p>
             ))}
           </div>
+        )}
+
+        {crimeReport.incidentDescription && (
+          <p>
+            <strong>Incident Description:</strong> {crimeReport.incidentDescription}
+          </p>
         )}
 
         <button className="downloadButton" onClick={downloadPDFReport}>

@@ -1,3 +1,5 @@
+/* page.module.css */
+
 /* Main container styling */
 .main {
   display: flex;
@@ -12,7 +14,7 @@
 }
 
 /* Crime Report Summary */
-.crimeReport {
+.crimeReportContainer {
   width: 90%;
   max-width: 550px;
   background-color: #fff;
@@ -23,69 +25,24 @@
   text-align: left;
 }
 
-/* Chat Container */
-.chatContainer {
+/* Was .chatContainer before; renamed to avoid clash with chat.module.css */
+.topChatContainer {
   width: 100%;
   max-width: 650px;
   background: white;
   padding: 16px;
   border-radius: 16px;
   box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
-  height: 80vh; /* Utilize vertical space */
+  height: 80vh; 
   margin: 16px auto;
   display: flex;
   flex-direction: column;
-
 }
 
 @media (max-width: 768px) {
-  .chatContainer {
-    height: calc(100vh - 60px); /* optimized height for mobile */
+  .topChatContainer {
+    height: calc(100vh - 60px);
     border-radius: 0;
     box-shadow: none;
-  }
-}
-
-/* Chat Input */
-.inputContainer {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  width: 90%;
-  max-width: 550px;
-  margin-top: 20px;
-}
-
-.inputContainer input {
-  flex: 1;
-  padding: 12px;
-  border-radius: 8px;
-  border: 2px solid #ccc;
-  background: #f9f9f9;
-  font-size: 1rem;
-}
-
-.inputContainer button {
-  background-color: #2563eb;
-  color: white;
-  font-weight: bold;
-  padding: 10px 15px;
-  border-radius: 8px;
-  cursor: pointer;
-  margin-left: 10px;
-}
-
-.inputContainer button:hover {
-  background-color: #1e40af;
-}
-
-@media (max-width: 768px) {
-  .main, .crimeReport, .chatContainer {
-    padding: 10px;
-    width: 100%;
-  }
-
-  .crimeReport {
-    font-size: 14px;
   }
 }
