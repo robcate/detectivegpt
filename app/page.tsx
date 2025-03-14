@@ -8,6 +8,12 @@ import jsPDF from "jspdf";
 import getVerifiedLocation from "./utils/getLocation";
 
 /**
+ * CHRONO + LUXON
+ */
+import * as chrono from "chrono-node";
+import { DateTime } from "luxon";
+
+/**
  * Types for your data
  */
 interface Coordinates {
@@ -55,21 +61,24 @@ interface CrimeReportData {
   witnesses?: Witness[];
   witness?: Witness; // unify to witnesses[]
 
-  // The conversation log in plain text or concatenated messages
+  // We'll store the entire conversation log
   conversationLog?: string;
 
-  // If the user finalizes a short "incidentDescription", store it
+  // If user finalizes a short summary
   incidentDescription?: string;
 
-  // The record ID we store to update the same row
+  // The record ID in Airtable
   airtableRecordId?: string;
 
-  // We'll store the assigned "Case Number" from Airtable
+  // The assigned "Case Number" from Airtable
   caseNumber?: string;
+
+  // (NEW) We'll store weather in a new "Weather" field
+  weather?: string;
 }
 
 /**
- * We'll fetch the route at /api/airtable to save/update the crime report
+ * We'll fetch /api/airtable to create/update
  */
 async function saveCrimeReportToAirtable(crimeReport: CrimeReportData) {
   console.log("🔹 [saveCrimeReportToAirtable] Sending to /api/airtable =>", crimeReport);
@@ -79,31 +88,65 @@ async function saveCrimeReportToAirtable(crimeReport: CrimeReportData) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(crimeReport),
   });
-
   const data = await res.json();
   console.log("🔹 [saveCrimeReportToAirtable] Response =>", data);
-  return data; // { success: true, recordId, caseNumber, ... }
+  return data;
+}
+
+/**
+ * (NEW) fetchWeather: A simple function to fetch current weather from OpenWeather
+ * You need an OPENWEATHER_API_KEY in your environment. 
+ */
+async function fetchWeather(lat: number, lon: number, isoDatetime: string): Promise<string> {
+  try {
+    // For a real "past weather" query, you'd use a different endpoint or a 'timestamp' param. 
+    // We'll do a simpler approach for demonstration => current weather. 
+    const apiKey = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY; // or process.env.OPENWEATHER_API_KEY
+    if (!apiKey) {
+      console.warn("No OPENWEATHER_API_KEY found in env. Returning placeholder weather.");
+      return "Weather data not available (no API key).";
+    }
+
+    // Example: get current weather
+    const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=imperial&appid=${apiKey}`;
+    console.log("🟨 [fetchWeather] => calling =>", url);
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      console.warn("🟨 [fetchWeather] => fetch not ok =>", resp.status);
+      return "Weather fetch failed.";
+    }
+    const data = await resp.json();
+    // Let's build a short textual summary
+    // e.g. "Clear (72°F), humidity 40%"
+    const desc = data.weather?.[0]?.description || "unknown";
+    const temp = data.main?.temp !== undefined ? `${Math.round(data.main.temp)}°F` : "??°F";
+    const humidity = data.main?.humidity !== undefined ? `${data.main.humidity}% humidity` : "";
+    const wind = data.wind?.speed !== undefined ? `wind ${Math.round(data.wind.speed)} mph` : "";
+    const summaryParts = [desc, temp, humidity, wind].filter(Boolean);
+    const summary = summaryParts.join(", ");
+    return summary || "No weather data available.";
+  } catch (err) {
+    console.error("❌ [fetchWeather] Unexpected error =>", err);
+    return "Error fetching weather data.";
+  }
 }
 
 export default function Page() {
-  // Local state for the crime report
   const [crimeReport, setCrimeReport] = useState<CrimeReportData>({});
-
-  // We also keep a ref that always has the latest crimeReport, so partial merges don’t overwrite fields
   const crimeReportRef = useRef(crimeReport);
+
   useEffect(() => {
     crimeReportRef.current = crimeReport;
   }, [crimeReport]);
 
-  // For conversation logging: we’ll store it in a local state as plain text
+  // We'll hold a conversationLog
   const [conversationLog, setConversationLog] = useState("");
 
-  // Initial system prompt
   const [initialMessages] = useState([
     {
       role: "assistant" as const,
       content:
-        "🚔 DetectiveGPT ready to take your statement about the incident. " +
+        "I'm ready to take your statement about the incident. " +
         "Please describe clearly what happened, including details about the suspect(s), vehicle(s), and any evidence.",
     },
   ]);
@@ -111,52 +154,69 @@ export default function Page() {
   console.log("🟨 [Page] Rendered. Current crimeReport =>", crimeReport);
 
   /**
-   * PDF generation (includes caseNumber)
+   * PDF Generation
+   * - Uppercases each value
+   * - Wraps text with doc.splitTextToSize so it doesn't run off page
    */
   const downloadPDFReport = () => {
     console.log("🟨 [Page] Generating PDF...");
-    const doc = new jsPDF();
+    const doc = new jsPDF({ unit: "pt", format: "letter" }); // letter: 612 x 792pt
     doc.setFontSize(18);
-    doc.text("Detective GPT Crime Report", 105, 20, { align: "center" });
+    doc.text("Detective GPT Crime Report", 306, 40, { align: "center" }); 
+    // x=306 => half of 612 (for center alignment on letter width)
 
     doc.setFontSize(12);
-    let yPos = 35;
-    const lineSpacing = 8;
+    let yPos = 70;
+    const lineSpacing = 16;
+    const wrapWidth = 480; // ~6.5" text width, leaving margins
 
-    const addLine = (label: string, value: string) => {
-      doc.setFont("helvetica", "bold");
-      doc.text(`${label}:`, 20, yPos);
-      doc.setFont("helvetica", "normal");
-      doc.text(value || "N/A", 70, yPos);
-      yPos += lineSpacing;
-    };
+    function addLine(label: string, value: string) {
+      if (!value) return;
+      // Convert value to uppercase
+      const upperValue = value.toUpperCase();
+      const line = `${label.toUpperCase()}: ${upperValue}`;
 
-    // Case Number
+      // Wrap text to avoid overflow
+      const wrapped = doc.splitTextToSize(line, wrapWidth);
+      wrapped.forEach((wrappedLine) => {
+        doc.text(wrappedLine, 60, yPos); // left margin ~60pt
+        yPos += lineSpacing;
+      });
+    }
+
+    // Now we pass each field to addLine
     if (crimeReport.caseNumber) {
       addLine("Case Number", crimeReport.caseNumber);
     }
-
-    if (crimeReport.crime_type) addLine("Crime Type", crimeReport.crime_type);
-    if (crimeReport.datetime) addLine("When", crimeReport.datetime);
-    if (crimeReport.location) addLine("Location", crimeReport.location);
+    if (crimeReport.crime_type) {
+      addLine("Type", crimeReport.crime_type);
+    }
+    if (crimeReport.datetime) {
+      addLine("When", crimeReport.datetime);
+    }
+    if (crimeReport.location) {
+      addLine("Location", crimeReport.location);
+    }
 
     if (crimeReport.coordinates) {
       addLine("Latitude", crimeReport.coordinates.lat.toString());
       addLine("Longitude", crimeReport.coordinates.lng.toString());
     }
 
-    // Vehicles
+    if (crimeReport.weather) {
+      addLine("Weather", crimeReport.weather);
+    }
+
     if (crimeReport.vehicles && crimeReport.vehicles.length > 0) {
       addLine("Vehicles", crimeReport.vehicles.join(", "));
     }
 
-    // Suspect
     if (crimeReport.suspect) {
       if (crimeReport.suspect.gender) addLine("Suspect Gender", crimeReport.suspect.gender);
       if (crimeReport.suspect.age) addLine("Suspect Age", crimeReport.suspect.age);
-      if (crimeReport.suspect.hair) addLine("Hair", crimeReport.suspect.hair);
-      if (crimeReport.suspect.clothing) addLine("Clothing", crimeReport.suspect.clothing);
-      if (crimeReport.suspect.features) addLine("Features", crimeReport.suspect.features);
+      if (crimeReport.suspect.hair) addLine("Suspect Hair", crimeReport.suspect.hair);
+      if (crimeReport.suspect.clothing) addLine("Suspect Clothing", crimeReport.suspect.clothing);
+      if (crimeReport.suspect.features) addLine("Suspect Features", crimeReport.suspect.features);
       if (crimeReport.suspect.height) addLine("Suspect Height", crimeReport.suspect.height);
       if (crimeReport.suspect.weight) addLine("Suspect Weight", crimeReport.suspect.weight);
       if (crimeReport.suspect.tattoos) addLine("Suspect Tattoos", crimeReport.suspect.tattoos);
@@ -164,21 +224,24 @@ export default function Page() {
       if (crimeReport.suspect.accent) addLine("Suspect Accent", crimeReport.suspect.accent);
     }
 
-    if (crimeReport.weapon) addLine("Weapon", crimeReport.weapon);
-    if (crimeReport.evidence) addLine("Evidence", crimeReport.evidence);
+    if (crimeReport.weapon) {
+      addLine("Weapon", crimeReport.weapon);
+    }
+    if (crimeReport.evidence) {
+      addLine("Evidence", crimeReport.evidence);
+    }
 
-    // Cameras
     if (crimeReport.cameras && crimeReport.cameras.length > 0) {
       addLine("Cameras", crimeReport.cameras.join(", "));
     }
 
-    // Injuries
-    if (crimeReport.injuries) addLine("Injuries", crimeReport.injuries);
+    if (crimeReport.injuries) {
+      addLine("Injuries", crimeReport.injuries);
+    }
+    if (crimeReport.propertyDamage) {
+      addLine("Property Damage", crimeReport.propertyDamage);
+    }
 
-    // Property Damage
-    if (crimeReport.propertyDamage) addLine("Property Damage", crimeReport.propertyDamage);
-
-    // Witnesses
     if (crimeReport.witnesses && crimeReport.witnesses.length > 0) {
       const witnessStr = crimeReport.witnesses
         .map((w) => (w.contact ? `${w.name} (${w.contact})` : w.name))
@@ -186,57 +249,45 @@ export default function Page() {
       addLine("Witnesses", witnessStr);
     }
 
-    // Incident Description if any
     if (crimeReport.incidentDescription) {
       addLine("Incident Description", crimeReport.incidentDescription);
     }
 
-    // (Optional) You could add conversation log, but it might be too large for PDF:
-    // if (crimeReport.conversationLog) {
-    //   addLine("Conversation Log", crimeReport.conversationLog);
-    // }
-
-    const timestamp = new Date().toLocaleString();
+    // Footer
     doc.setFontSize(8);
-    doc.text(`Report generated by DetectiveGPT on ${timestamp}`, 105, 280, { align: "center" });
+    doc.text(
+      `Report generated by DetectiveGPT on ${new Date().toLocaleString()}`,
+      306,
+      770,
+      { align: "center" }
+    );
+
     doc.save("crime_report.pdf");
   };
 
   /**
-   * The main function call handler for "update_crime_report"
-   * - Translates to English
-   * - Unifies singular->array fields
-   * - Merges partial updates
-   * - Verifies location
-   * - Saves to Airtable
+   * The main functionCallHandler for "update_crime_report", "approve_incident_description", etc.
    */
   const functionCallHandler = async (call: RequiredActionFunctionToolCall) => {
     console.log("🟨 [Page] functionCallHandler => call:", call);
 
-    // Return JSON if no function name
     if (!call?.function?.name) {
       console.warn("🟨 [Page] No function name in call");
-      return JSON.stringify({
-        success: false,
-        message: "No function name provided.",
-      });
+      return JSON.stringify({ success: false, message: "No function name provided." });
     }
 
-    // If the user confirms a final summary, store as incidentDescription
+    // Approve final summary
     if (call.function.name === "approve_incident_description") {
       try {
         const parsed = JSON.parse(call.function.arguments);
         const finalSummary = parsed.final_summary || "";
-        // Merge into local
         const merged = { ...crimeReportRef.current, incidentDescription: finalSummary };
         setCrimeReport(merged);
         console.log("🟨 [Page] Final incident description =>", finalSummary);
 
-        // Save to Airtable with conversation log, so it’s not lost
-        const dataToSave = { ...merged, conversationLog }; // include conversation
+        const dataToSave = { ...merged, conversationLog };
         const result = await saveCrimeReportToAirtable(dataToSave);
         if (result.success) {
-          // Update local with recordId/caseNumber if needed
           setCrimeReport((prev) => ({
             ...prev,
             airtableRecordId: result.recordId,
@@ -257,19 +308,15 @@ export default function Page() {
         }
       } catch (err) {
         console.error("❌ [Page] Error parsing approve_incident_description =>", err);
-        return JSON.stringify({
-          success: false,
-          message: String(err),
-        });
+        return JSON.stringify({ success: false, message: String(err) });
       }
     }
 
-    // If the user calls "summarize_incident_description", just echo back
+    // Summarize final description
     if (call.function.name === "summarize_incident_description") {
       try {
         const parsed = JSON.parse(call.function.arguments);
         const raw = parsed.raw_description || "";
-        // We'll just respond with success, leaving GPT to show the summary. Then user can call approve_incident_description.
         return JSON.stringify({
           success: true,
           message: "Draft summary generated",
@@ -277,32 +324,26 @@ export default function Page() {
         });
       } catch (err) {
         console.error("❌ [Page] Error parsing summarize_incident_description =>", err);
-        return JSON.stringify({
-          success: false,
-          message: String(err),
-        });
+        return JSON.stringify({ success: false, message: String(err) });
       }
     }
 
+    // Update crime report
     if (call.function.name === "update_crime_report") {
       const args = JSON.parse(call.function.arguments) as CrimeReportData;
       console.log("🟨 [Page] update_crime_report => parsed args:", args);
 
-      // Unify singular "vehicle" -> vehicles[]
+      // unify single->array
       if (args.vehicle) {
         if (!args.vehicles) args.vehicles = [];
         args.vehicles.push(args.vehicle);
         delete args.vehicle;
       }
-
-      // Unify singular "camera" -> cameras[]
       if (args.camera) {
         if (!args.cameras) args.cameras = [];
         args.cameras.push(args.camera);
         delete args.camera;
       }
-
-      // Unify singular "witness" -> witnesses[]
       if (args.witness) {
         if (!args.witnesses) args.witnesses = [];
         args.witnesses.push(args.witness);
@@ -310,10 +351,10 @@ export default function Page() {
       }
 
       // -----------------------
-      // TRANSLATION LOGIC BEGIN
+      // TRANSLATION w/ /api/translate
       // -----------------------
       const translateToEnglish = async (text: string): Promise<string> => {
-        if (!text) return text; // skip empty
+        if (!text) return text;
         try {
           console.log("🟨 [translateToEnglish] Sending text to /api/translate =>", text);
           const res = await fetch("/api/translate", {
@@ -324,7 +365,7 @@ export default function Page() {
           const data = await res.json();
           if (!data.success) {
             console.error("❌ [translateToEnglish] Translation failed:", data.error);
-            return text; // fallback
+            return text;
           }
           console.log("🟨 [translateToEnglish] Received translation =>", data.translation);
           return data.translation;
@@ -334,7 +375,7 @@ export default function Page() {
         }
       };
 
-      // Translate main fields
+      // main fields
       if (args.crime_type) {
         args.crime_type = await translateToEnglish(args.crime_type);
       }
@@ -357,7 +398,7 @@ export default function Page() {
         args.propertyDamage = await translateToEnglish(args.propertyDamage);
       }
 
-      // Translate suspect details
+      // suspect
       if (args.suspect) {
         if (args.suspect.gender) {
           args.suspect.gender = await translateToEnglish(args.suspect.gender);
@@ -374,26 +415,24 @@ export default function Page() {
         if (args.suspect.features) {
           args.suspect.features = await translateToEnglish(args.suspect.features);
         }
+        if (args.suspect.height) {
+          args.suspect.height = await translateToEnglish(args.suspect.height);
+        }
+        if (args.suspect.weight) {
+          args.suspect.weight = await translateToEnglish(args.suspect.weight);
+        }
+        if (args.suspect.tattoos) {
+          args.suspect.tattoos = await translateToEnglish(args.suspect.tattoos);
+        }
+        if (args.suspect.scars) {
+          args.suspect.scars = await translateToEnglish(args.suspect.scars);
+        }
+        if (args.suspect.accent) {
+          args.suspect.accent = await translateToEnglish(args.suspect.accent);
+        }
       }
 
-      // Translate extended suspect fields (height, weight, accent, tattoos, scars)
-      if (args.suspect?.height) {
-        args.suspect.height = await translateToEnglish(args.suspect.height);
-      }
-      if (args.suspect?.weight) {
-        args.suspect.weight = await translateToEnglish(args.suspect.weight);
-      }
-      if (args.suspect?.tattoos) {
-        args.suspect.tattoos = await translateToEnglish(args.suspect.tattoos);
-      }
-      if (args.suspect?.scars) {
-        args.suspect.scars = await translateToEnglish(args.suspect.scars);
-      }
-      if (args.suspect?.accent) {
-        args.suspect.accent = await translateToEnglish(args.suspect.accent);
-      }
-
-      // Translate witnesses
+      // witnesses
       if (args.witnesses && args.witnesses.length > 0) {
         for (const witness of args.witnesses) {
           if (witness.name) {
@@ -404,11 +443,8 @@ export default function Page() {
           }
         }
       }
-      // -----------------------
-      // TRANSLATION LOGIC END
-      // -----------------------
 
-      // Attempt location verification (in English)
+      // Attempt location verification
       try {
         if (args.location) {
           console.log("🟨 [Page] Attempting to verify location:", args.location);
@@ -416,9 +452,8 @@ export default function Page() {
           if (!success) {
             console.warn("🟨 [Page] getVerifiedLocation => not successful:", error);
           } else if (locationCandidates.length > 1) {
-            // Merge partial fields so we don’t lose them
             const partialMerged = { ...crimeReportRef.current, ...args };
-            partialMerged.conversationLog = conversationLog; // keep log
+            partialMerged.conversationLog = conversationLog;
             setCrimeReport(partialMerged);
             console.log("🟨 [Page] Partial update (multiple location matches) =>", partialMerged);
 
@@ -438,29 +473,60 @@ export default function Page() {
         console.error("🟥 [Page] Error verifying location:", geoErr);
       }
 
-      // Merge new data into local state
-      // Also keep the conversation log from local state
+      // CHRONO + LUXON parse datetime
+      if (args.datetime) {
+        console.log("🟨 [Page] Attempting to parse user datetime =>", args.datetime);
+        const parsedResults = chrono.parse(args.datetime);
+        if (parsedResults && parsedResults.length > 0) {
+          const bestResult = parsedResults[0];
+          const dateObj = bestResult.start.date();
+          console.log("🟨 [Page] chrono parsed date =>", dateObj);
+
+          const fallbackTZ = process.env.NEXT_PUBLIC_TIME_ZONE || "America/Chicago";
+          const dt = DateTime.fromJSDate(dateObj, { zone: fallbackTZ });
+          const isoStr = dt.toISO({ suppressMilliseconds: true });
+          console.log("🟨 [Page] chrono => luxon => final =>", isoStr);
+
+          args.datetime = isoStr;
+        }
+      }
+
+      // (NEW) If we have coordinates + datetime => fetch weather
+      //  - For demonstration we only do "current" weather ignoring time 
+      //    but you can adapt as needed.
+      if (args.coordinates && args.coordinates.lat && args.coordinates.lng) {
+        try {
+          const lat = args.coordinates.lat;
+          const lng = args.coordinates.lng;
+          const isoTime = args.datetime || new Date().toISOString(); // fallback to now
+          console.log("🟨 [Page] Attempting to fetch weather =>", lat, lng, isoTime);
+          const weatherSummary = await fetchWeather(lat, lng, isoTime);
+          console.log("🟨 [Page] Weather =>", weatherSummary);
+          args.weather = weatherSummary;
+        } catch (err) {
+          console.error("❌ [Page] Weather fetch error =>", err);
+        }
+      }
+
       const merged = { ...crimeReportRef.current, ...args };
       merged.conversationLog = conversationLog;
-
       setCrimeReport(merged);
       console.log("🟨 [Page] Crime report updated =>", merged);
 
-      // Save/Update to Airtable
+      // Save to Airtable
       const result = await saveCrimeReportToAirtable(merged);
-
       if (result.success) {
         console.log("🟨 [Page] Airtable save success => recordId:", result.recordId, "caseNumber:", result.caseNumber);
-        // Update local state with the new recordId & caseNumber
         setCrimeReport((prev) => ({
           ...prev,
           airtableRecordId: result.recordId,
           caseNumber: result.caseNumber,
         }));
 
+        // Return a short message to the GPT thread 
         return JSON.stringify({
           success: true,
-          message: "Crime report updated & saved to Airtable",
+          message: "Crime report updated & saved to Airtable. Weather added if coords/time available.",
           recordId: result.recordId,
           caseNumber: result.caseNumber,
           updatedFields: args,
@@ -476,46 +542,14 @@ export default function Page() {
     }
 
     console.log("🟨 [Page] No matching function for:", call.function.name);
-    return JSON.stringify({
-      success: false,
-      message: "No matching function found.",
-    });
+    return JSON.stringify({ success: false, message: "No matching function found." });
   };
 
   return (
     <main className={styles.main}>
-      <header className="header">
-        <h1>🚔 DETECTIVE GPT READY TO ASSIST</h1>
-        <p>Report crimes securely & anonymously. Your information is protected.</p>
-      </header>
-
-      <div className={styles.chatContainer}>
-        <Chat
-          functionCallHandler={async (toolCall) => {
-            // 1) Each time user or GPT messages, we’ll keep appending to conversationLog
-            // but the best place to do that is in chat.tsx. So we’ll create a function
-            // there that returns the entire conversation, or handle it here:
-            // We'll do a trick: in Chat's onNewMessage prop we can store them.
-            //
-            // For this snippet, let's assume Chat calls this function AFTER it appends messages.
-
-            // 2) Actually call your functionCallHandler logic:
-            const resultJson = await functionCallHandler(toolCall);
-
-            return resultJson;
-          }}
-          initialMessages={initialMessages}
-          // We'll pass an extra prop so Chat can update our conversationLog as plain text
-          onConversationUpdated={(newLog) => {
-            setConversationLog(newLog);
-          }}
-        />
-      </div>
-
       <div className={styles.crimeReportContainer}>
         <h3>Crime Report Summary</h3>
 
-        {/* Show the Case Number */}
         {crimeReport.caseNumber && (
           <p>
             <strong>Case Number:</strong> {crimeReport.caseNumber}
@@ -527,36 +561,33 @@ export default function Page() {
             <strong>Type:</strong> {crimeReport.crime_type}
           </p>
         )}
-
         {crimeReport.datetime && (
           <p>
             <strong>When:</strong> {crimeReport.datetime}
           </p>
         )}
-
         {crimeReport.location && (
           <p>
             <strong>Location:</strong> {crimeReport.location}
           </p>
         )}
-
         {crimeReport.coordinates && (
           <>
-            <p>
-              <strong>Latitude:</strong> {crimeReport.coordinates.lat}
-            </p>
-            <p>
-              <strong>Longitude:</strong> {crimeReport.coordinates.lng}
-            </p>
+            <p><strong>Latitude:</strong> {crimeReport.coordinates.lat}</p>
+            <p><strong>Longitude:</strong> {crimeReport.coordinates.lng}</p>
           </>
         )}
 
-        {crimeReport.vehicles && crimeReport.vehicles.length > 0 && (
+        {/* (NEW) Display weather if present */}
+        {crimeReport.weather && (
           <p>
-            <strong>Vehicles:</strong> {crimeReport.vehicles.join(", ")}
+            <strong>Weather:</strong> {crimeReport.weather}
           </p>
         )}
 
+        {crimeReport.vehicles && crimeReport.vehicles.length > 0 && (
+          <p><strong>Vehicles:</strong> {crimeReport.vehicles.join(", ")}</p>
+        )}
         {crimeReport.suspect && (
           <div>
             <strong>Suspect Details:</strong>
@@ -572,37 +603,21 @@ export default function Page() {
             {crimeReport.suspect.accent && <p>Accent: {crimeReport.suspect.accent}</p>}
           </div>
         )}
-
         {crimeReport.weapon && (
-          <p>
-            <strong>Weapon:</strong> {crimeReport.weapon}
-          </p>
+          <p><strong>Weapon:</strong> {crimeReport.weapon}</p>
         )}
-
         {crimeReport.evidence && (
-          <p>
-            <strong>Evidence:</strong> {crimeReport.evidence}
-          </p>
+          <p><strong>Evidence:</strong> {crimeReport.evidence}</p>
         )}
-
         {crimeReport.cameras && crimeReport.cameras.length > 0 && (
-          <p>
-            <strong>Cameras:</strong> {crimeReport.cameras.join(", ")}
-          </p>
+          <p><strong>Cameras:</strong> {crimeReport.cameras.join(", ")}</p>
         )}
-
         {crimeReport.injuries && (
-          <p>
-            <strong>Injuries:</strong> {crimeReport.injuries}
-          </p>
+          <p><strong>Injuries:</strong> {crimeReport.injuries}</p>
         )}
-
         {crimeReport.propertyDamage && (
-          <p>
-            <strong>Property Damage:</strong> {crimeReport.propertyDamage}
-          </p>
+          <p><strong>Property Damage:</strong> {crimeReport.propertyDamage}</p>
         )}
-
         {crimeReport.witnesses && crimeReport.witnesses.length > 0 && (
           <div>
             <strong>Witnesses:</strong>
@@ -614,16 +629,32 @@ export default function Page() {
             ))}
           </div>
         )}
-
         {crimeReport.incidentDescription && (
           <p>
             <strong>Incident Description:</strong> {crimeReport.incidentDescription}
           </p>
         )}
 
-        <button className="downloadButton" onClick={downloadPDFReport}>
+        <button 
+          className="button-common centered" 
+          onClick={downloadPDFReport}
+        >
           📥 Download PDF Report
         </button>
+      </div>
+
+      <div className={styles.chatContainer}>
+        <Chat
+          functionCallHandler={async (toolCall) => {
+            // Chat handles user/assistant messages; we store conversationLog
+            const resultJson = await functionCallHandler(toolCall);
+            return resultJson;
+          }}
+          initialMessages={initialMessages}
+          onConversationUpdated={(newLog) => {
+            setConversationLog(newLog);
+          }}
+        />
       </div>
     </main>
   );

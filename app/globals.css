@@ -91,3 +91,37 @@ pre {
     font-size: 14px;
   }
 }
+
+/* globals.css */
+
+.button-common {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #2563eb;
+  color: #fff;
+  font-weight: 600;
+  border: none;
+  border-radius: 60px;
+  padding: 0.6rem 1.2rem;
+  font-size: 1em;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  text-decoration: none;
+}
+
+.button-common:hover {
+  background-color: #1d4ed8;
+}
+
+.button-common:disabled {
+  background-color: #999;
+  cursor: not-allowed;
+}
+
+/* If you want to center a button horizontally */
+.centered {
+  display: block;
+  margin: 1rem auto;
+}
+

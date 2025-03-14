@@ -5,6 +5,7 @@
    etc.
 */
 
+/* First .chatContainer definition (unchanged) */
 .chatContainer {
   display: flex;
   flex-direction: column; /* ensures input is at the bottom */
@@ -13,11 +14,21 @@
 }
 
 .inputForm {
+  /* CHANGED for Option B: make the form sticky so it stays at the bottom */
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  background-color: #fff;
+
   display: flex;
   width: 100%;
   padding: 10px;
   padding-bottom: 20px;
-  margin-top: auto;
+
+  /* Removed margin-top: auto (which conflicts with sticky).
+     If you must keep it, override with !important:
+     margin-top: 0 !important;
+  */
 }
 
 .input {
@@ -155,7 +166,7 @@
   text-align: left;
 }
 
-/* Chat Container */
+/* Second .chatContainer definition (unchanged) */
 .chatContainer {
   width: 100%;
   max-width: 650px;
@@ -221,4 +232,3 @@
 }
 
 /* We omit :root or :global(:root) here to avoid Next.js CSS module errors. */
-

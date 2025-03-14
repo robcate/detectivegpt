@@ -15,8 +15,8 @@
 
 /* Crime Report Summary */
 .crimeReportContainer {
-  width: 90%;
-  max-width: 550px;
+  width: 100%;
+  max-width: 650px;
   background-color: #fff;
   padding: 20px;
   margin: 20px auto;
@@ -24,6 +24,11 @@
   box-shadow: 0 8px 16px rgba(0,0,0,0.2);
   text-align: left;
 }
+
+.crimeReportText {
+  text-transform: uppercase;
+}
+
 
 /* Was .chatContainer before; renamed to avoid clash with chat.module.css */
 .topChatContainer {

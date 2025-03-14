@@ -1,4 +1,5 @@
 // pages/api/upload.ts
+
 import type { NextApiRequest, NextApiResponse } from "next";
 import formidable, { File } from "formidable";
 import fs from "fs";
@@ -177,10 +178,30 @@ function uploadFileToGCS(file: File): Promise<string> {
 async function analyzeImage(publicUrl: string): Promise<string> {
   console.log("🟨 [upload.ts] => Analyzing image =>", publicUrl);
   try {
-    const [result] = await visionClient.labelDetection(publicUrl);
-    const labels = result.labelAnnotations || [];
-    const labelDescriptions = labels.map((l) => l.description).join(", ");
-    console.log("🟨 [upload.ts] => Vision labels =>", labelDescriptions);
+    // We request both label detection AND object localization
+    const [result] = await visionClient.annotateImage({
+      image: { source: { imageUri: publicUrl } },
+      features: [
+        { type: "LABEL_DETECTION", maxResults: 20 },
+        { type: "OBJECT_LOCALIZATION" },
+      ],
+    });
+
+    const labelAnnotations = result.labelAnnotations || [];
+    const objectAnnotations = result.localizedObjectAnnotations || [];
+
+    // Convert label descriptions to string
+    const labelDescs = labelAnnotations.map((l) => l.description);
+    // Convert object names to string
+    const objectNames = objectAnnotations.map((o) => o.name);
+
+    console.log("🟨 [upload.ts] => Vision labels =>", labelDescs.join(", "));
+    console.log("🟨 [upload.ts] => Vision objects =>", objectNames.join(", "));
+
+    // Combine them all for GPT
+    const combined = [...labelDescs, ...objectNames];
+    const labelDescriptions = combined.join(", ");
+
     return labelDescriptions;
   } catch (err) {
     console.error("🟥 [upload.ts] => Vision error:", err);
