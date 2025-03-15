@@ -2,35 +2,21 @@ import { assistantId } from "@/app/assistant-config";
 import { openai } from "@/app/openai";
 
 // upload file to assistant's vector store
-export async function POST(request: Request) {
-  // 1) read FormData
-  const formData = await request.formData();
-  const fileValue = formData.get("file");
+export async function POST(request) {
+  const formData = await request.formData(); // process file as FormData
+  const file = formData.get("file"); // retrieve the single file from FormData
+  const vectorStoreId = await getOrCreateVectorStore(); // get or create vector store
 
-  // 2) ensure we have a valid Blob
-  if (!fileValue || typeof fileValue === "string") {
-    return new Response("No valid file found in formData.", { status: 400 });
-  }
-
-  // fileValue is a Blob (in Next.js 14). We'll wrap it in a File so it satisfies "Uploadable" (FileLike).
-  const fileBlob = fileValue as Blob;
-  // We'll preserve the type from the Blob if present, and give it a default name:
-  const typedFile = new File([fileBlob], "uploaded-file", { type: fileBlob.type });
-
-  // 3) get or create vector store
-  const vectorStoreId = await getOrCreateVectorStore();
-
-  // 4) upload using the File
+  // upload using the file stream
   const openaiFile = await openai.files.create({
-    file: typedFile,
+    file: file,
     purpose: "assistants",
   });
 
-  // 5) attach the file to vector store
+  // add file to vector store
   await openai.beta.vectorStores.files.create(vectorStoreId, {
     file_id: openaiFile.id,
   });
-
   return new Response();
 }
 
@@ -57,7 +43,7 @@ export async function GET() {
 }
 
 // delete file from assistant's vector store
-export async function DELETE(request: Request) {
+export async function DELETE(request) {
   const body = await request.json();
   const fileId = body.fileId;
 
@@ -73,11 +59,10 @@ const getOrCreateVectorStore = async () => {
   const assistant = await openai.beta.assistants.retrieve(assistantId);
 
   // if the assistant already has a vector store, return it
-  if ((assistant.tool_resources?.file_search?.vector_store_ids ?? []).length > 0) {
+  if (assistant.tool_resources?.file_search?.vector_store_ids?.length > 0) {
     return assistant.tool_resources.file_search.vector_store_ids[0];
   }
-
-  // otherwise, create a new vector store and attach it to the assistant
+  // otherwise, create a new vector store and attatch it to the assistant
   const vectorStore = await openai.beta.vectorStores.create({
     name: "sample-assistant-vector-store",
   });
