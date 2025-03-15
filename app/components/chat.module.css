@@ -131,6 +131,23 @@
   font-weight: 500;
 }
 
+.analyzingBanner {
+  background-color: #fff3cd; /* optional highlight */
+  color: #856404;           /* darker text color */
+  text-align: center;
+  padding: 16px;
+  border: 1px solid #ffeeba;
+  border-radius: 8px;
+  margin-bottom: 10px; /* some space below banner */
+}
+
+.analyzingBanner p {
+  font-size: 1.25rem; /* e.g. ~20px */
+  font-weight: bold;
+  margin: 0;
+}
+
+
 /* Container styling (if needed) */
 .main {
   display: flex;
