@@ -411,10 +411,10 @@ export default function Chat({
           const joinedUrls = fileUrls.join(", ");
           const joinedObs = observations.join("\n");
 
-          // Add 'id' and 'type' so we match RequiredActionFunctionToolCall
+          // Provide the 'id' and 'type' that the RequiredActionFunctionToolCall interface expects
           const updateCall: RequiredActionFunctionToolCall = {
             id: "temp-id",
-            type: "function_call",
+            type: "function", // <--- fix from "function_call" to "function"
             function: {
               name: "update_crime_report",
               arguments: JSON.stringify({
