@@ -151,7 +151,7 @@ export default function Chat({
   // A ref for the file input so we can reset it after upload
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // We'll track if the user has actually sent a message (so we can skip auto-scroll on mount)
+  // We'll track if the user has actually sent a message
   const [hasUserSentMessage, setHasUserSentMessage] = useState(false);
 
   /**
@@ -162,7 +162,6 @@ export default function Chat({
    */
   function appendLog(role: "user" | "assistant", text: string) {
     if (!text || text.trim() === "" || text.trim() === "undefined") {
-      // Skip logging empty/undefined messages
       return;
     }
     const ts = new Date().toLocaleTimeString();
@@ -176,7 +175,6 @@ export default function Chat({
    */
   useEffect(() => {
     if (initialMessages.length > 0) {
-      // We'll just set them as starting messages
       const preloaded = initialMessages.map((m) => ({
         role: m.role,
         text: m.content,
@@ -184,7 +182,6 @@ export default function Chat({
       }));
       setMessages(preloaded);
 
-      // Also log them once
       preloaded.forEach((msg) => {
         appendLog("assistant", msg.text);
       });
@@ -202,17 +199,14 @@ export default function Chat({
             if (prev.length === 0) return prev;
             const last = prev[prev.length - 1];
 
-            // If finished
             if (index >= INTRO_TEXT.length) {
               clearInterval(interval);
-              // Once fully typed, log it (if not empty)
               if (last.text.trim().length > 0) {
                 appendLog("assistant", last.text);
               }
               return prev;
             }
 
-            // Otherwise, append the next character
             const updated = { ...last, text: last.text + INTRO_TEXT[index] };
             index++;
             return [...prev.slice(0, -1), updated];
@@ -255,7 +249,6 @@ export default function Chat({
 
     setHasUserSentMessage(true);
 
-    // We'll create a new user message
     const newMsg: MessageProps = {
       role: "user",
       text: userInput,
@@ -288,7 +281,8 @@ export default function Chat({
     const toolCalls = event.data.required_action.submit_tool_outputs.tool_calls;
     console.log("[chat.tsx] toolCalls =>", toolCalls);
 
-    // For each tool call, we call functionCallHandler
+    setInputDisabled(true);
+
     const toolCallOutputs = await Promise.all(
       toolCalls.map(async (toolCall: RequiredActionFunctionToolCall) => {
         console.log("[chat.tsx] handleRequiresAction => calling functionCallHandler =>", toolCall);
@@ -297,9 +291,7 @@ export default function Chat({
       })
     );
 
-    setInputDisabled(true);
-
-    // Then we POST back these results
+    // Now post them
     const resp = await fetch(`/api/assistants/threads/${threadId}/actions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -315,13 +307,16 @@ export default function Chat({
   function attachStreamListeners(stream: AssistantStream) {
     console.log("[chat.tsx] attachStreamListeners => attaching...");
 
+    // The library's event type union doesn't include `thread.run.started`,
+    // so we use `thread.run.in_progress` for a similar effect.
     stream.on("textCreated", handleTextCreated);
     stream.on("textDelta", handleTextDelta);
 
     stream.on("event", (event) => {
       console.log("[chat.tsx] stream on(event) =>", event);
-      // If the run starts => show "Analyzing..." 
-      if (event.event === "thread.run.started") {
+
+      // If the run transitions to in_progress => show "Analyzing..."
+      if (event.event === "thread.run.in_progress") {
         setIsStreaming(true);
         setInputDisabled(true);
       }
@@ -338,21 +333,22 @@ export default function Chat({
   }
 
   /**
-   * stream event handlers
+   * textCreated => an "assistant" message is about to begin streaming
    */
   function handleTextCreated() {
     console.log("[chat.tsx] handleTextCreated => creating new assistant message container...");
-    // Insert an empty assistant message so we can append textDelta
     setMessages((prev) => [
       ...prev,
       { role: "assistant", text: "", timestamp: new Date() },
     ]);
   }
 
+  /**
+   * textDelta => partial text chunk
+   */
   function handleTextDelta(delta: any) {
     if (delta.value != null) {
       console.log("[chat.tsx] handleTextDelta => appending chunk:", delta.value);
-      // Append to last assistant message
       setMessages((prev) => {
         if (prev.length === 0) return prev;
         const last = prev[prev.length - 1];
@@ -364,7 +360,6 @@ export default function Chat({
 
   function handleRunCompleted() {
     console.log("[chat.tsx] handleRunCompleted => done streaming => enable input");
-    // Once final message is done, we log it if not empty
     const lastMsg = messages[messages.length - 1];
     if (lastMsg && lastMsg.role === "assistant") {
       appendLog("assistant", lastMsg.text);
@@ -372,7 +367,9 @@ export default function Chat({
     setInputDisabled(false);
   }
 
-  // A helper to pass a text note to GPT, so GPT sees that new images were uploaded
+  /**
+   * notifyGPTOfFileUpload => pass a text note so GPT sees that new images were uploaded
+   */
   async function notifyGPTOfFileUpload(messageContent: string) {
     const response = await fetch(`/api/assistants/threads/${threadId}/messages`, {
       method: "POST",
@@ -383,7 +380,7 @@ export default function Chat({
   }
 
   /**
-   * File upload
+   * handleFileChange => user selected file(s)
    */
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     if (!e.target.files || e.target.files.length === 0) return;
@@ -392,6 +389,7 @@ export default function Chat({
     Array.from(e.target.files).forEach((file) => formData.append("files", file));
 
     console.log("[chat.tsx] handleFileChange => uploading files =>", e.target.files);
+
     try {
       const res = await fetch("/api/upload", {
         method: "POST",
@@ -400,15 +398,13 @@ export default function Chat({
       console.log("[chat.tsx] File upload => response:", res.status);
 
       if (res.ok) {
-        // { fileUrls, observations }
         const { fileUrls, observations } = await res.json();
         console.log("[chat.tsx] fileUrls =>", fileUrls);
         console.log("[chat.tsx] observations =>", observations);
 
-        // We'll accumulate a summary for GPT about all uploaded files
         let combinedMessageForGPT = "User uploaded new file(s) with observations:\n";
 
-        // For each file, we'll post an assistant message with the link + short observation
+        // Post each file into the chat
         fileUrls.forEach((url: string, idx: number) => {
           const note = observations[idx] || "(No observation)";
           let text = "";
@@ -418,18 +414,16 @@ export default function Chat({
             text = `**File Uploaded**: [Link](${url})\n**Observation:** ${note}`;
           }
 
-          // Show in local chat UI
           setMessages((prev) => [
             ...prev,
             { role: "assistant", text, timestamp: new Date() },
           ]);
           appendLog("assistant", text);
 
-          // Also add it to the combined message
           combinedMessageForGPT += ` - ${url}\n   Observation: ${note}\n`;
         });
 
-        // Also call update_crime_report with both evidence + evidenceObservations
+        // Also call update_crime_report with the evidence + observation
         if (functionCallHandler) {
           const joinedUrls = fileUrls.join(", ");
           const joinedObs = observations.join("\n");
@@ -450,22 +444,17 @@ export default function Chat({
           const resultJson = await functionCallHandler(updateCall);
           console.log("[chat.tsx] functionCallHandler => returned =>", resultJson);
 
-          // (NEW) Wait for the "update_crime_report" run to finish
           console.log("[chat.tsx] handleFileChange => waiting for run to complete after functionCallHandler...");
           await waitForRunToComplete();
           console.log("[chat.tsx] handleFileChange => run completed => next step...");
         }
 
-        // (EXISTING) Wait for any current run to complete before calling notifyGPTOfFileUpload
         console.log("[chat.tsx] handleFileChange => waiting for run to complete before notifyGPTOfFileUpload...");
         await waitForRunToComplete();
         console.log("[chat.tsx] handleFileChange => run completed => now calling notifyGPTOfFileUpload...");
 
-        // Now notify GPT of file uploads in a "user" message
         await notifyGPTOfFileUpload(combinedMessageForGPT);
-
       } else {
-        // Not ok
         const errText = await res.text();
         console.error("[chat.tsx] file upload error =>", errText);
         setMessages((prev) => [
@@ -491,7 +480,6 @@ export default function Chat({
       appendLog("assistant", "An unexpected error occurred during file upload.");
     }
 
-    // Reset file input
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -502,7 +490,7 @@ export default function Chat({
   // ----------------------------------------------------------------
   return (
     <div className={styles.chatContainer}>
-      {/* Show "Analyzing..." if a run is currently in progress */}
+      {/* If isStreaming is true => show the analyzing banner */}
       {isStreaming && (
         <div className={styles.analyzingBanner}>
           <p>Analyzing...</p>
@@ -516,7 +504,6 @@ export default function Chat({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Text input form */}
       <form onSubmit={handleSubmit} className={styles.inputForm}>
         <textarea
           className={styles.input}
@@ -549,7 +536,6 @@ export default function Chat({
         </button>
       </form>
 
-      {/* File upload */}
       <label className="button-common" style={{ marginTop: "10px" }}>
         Upload Evidence
         <input
