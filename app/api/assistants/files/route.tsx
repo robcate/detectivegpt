@@ -12,17 +12,17 @@ export async function POST(request: Request) {
     return new Response("No valid file found in formData.", { status: 400 });
   }
 
-  // Convert the blob to a Buffer so openai.files.create can accept it
+  // fileValue is a Blob (in Next.js 14). We'll wrap it in a File so it satisfies "Uploadable" (FileLike).
   const fileBlob = fileValue as Blob;
-  const arrayBuffer = await fileBlob.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
+  // We'll preserve the type from the Blob if present, and give it a default name:
+  const typedFile = new File([fileBlob], "uploaded-file", { type: fileBlob.type });
 
   // 3) get or create vector store
   const vectorStoreId = await getOrCreateVectorStore();
 
-  // 4) upload using the file buffer
+  // 4) upload using the File
   const openaiFile = await openai.files.create({
-    file: buffer,
+    file: typedFile,
     purpose: "assistants",
   });
 
@@ -76,6 +76,7 @@ const getOrCreateVectorStore = async () => {
   if ((assistant.tool_resources?.file_search?.vector_store_ids ?? []).length > 0) {
     return assistant.tool_resources.file_search.vector_store_ids[0];
   }
+
   // otherwise, create a new vector store and attach it to the assistant
   const vectorStore = await openai.beta.vectorStores.create({
     name: "sample-assistant-vector-store",
