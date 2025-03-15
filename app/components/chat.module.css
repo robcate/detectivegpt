@@ -18,7 +18,7 @@
   -webkit-overflow-scrolling: touch; /* iOS smooth scrolling */
 }
 
-/* The input form is sticky at the bottom on desktop, fixed on mobile */
+/* The input form is sticky at the bottom */
 .inputForm {
   position: sticky;
   bottom: 0;
@@ -156,7 +156,7 @@
   text-align: left;
 }
 
-/* A second .chatContainer block might exist – you can remove duplicates if needed. */
+/* A second .chatContainer block might exist – you can keep or remove if you prefer. */
 .chatContainer {
   width: 100%;
   max-width: 650px;
@@ -170,33 +170,4 @@
   flex-direction: column;
 }
 
-@media (max-width: 768px) {
-  /* On mobile, let the container fill the screen and fix the input bar */
-  .chatContainer {
-    height: 100vh;
-    border-radius: 0;
-    box-shadow: none;
-    margin: 0;
-    overflow: hidden;
-  }
-
-  .messages {
-    padding-bottom: 80px; /* space for the fixed input bar */
-  }
-
-  .inputForm {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 999;
-    background-color: #fff;
-    border-top: 1px solid #ccc;
-    padding-bottom: 10px;
-  }
-
-  .sendButton {
-    width: 44px;
-    height: 44px;
-  }
-}
+/* (REMOVED the @media (max-width: 768px) block that forced 100vh and fixed input) */

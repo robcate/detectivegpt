@@ -307,8 +307,6 @@ export default function Chat({
   function attachStreamListeners(stream: AssistantStream) {
     console.log("[chat.tsx] attachStreamListeners => attaching...");
 
-    // The library's event type union doesn't include `thread.run.started`,
-    // so we use `thread.run.in_progress` for a similar effect.
     stream.on("textCreated", handleTextCreated);
     stream.on("textDelta", handleTextDelta);
 
@@ -332,9 +330,6 @@ export default function Chat({
     });
   }
 
-  /**
-   * textCreated => an "assistant" message is about to begin streaming
-   */
   function handleTextCreated() {
     console.log("[chat.tsx] handleTextCreated => creating new assistant message container...");
     setMessages((prev) => [
@@ -343,9 +338,6 @@ export default function Chat({
     ]);
   }
 
-  /**
-   * textDelta => partial text chunk
-   */
   function handleTextDelta(delta: any) {
     if (delta.value != null) {
       console.log("[chat.tsx] handleTextDelta => appending chunk:", delta.value);
@@ -367,9 +359,6 @@ export default function Chat({
     setInputDisabled(false);
   }
 
-  /**
-   * notifyGPTOfFileUpload => pass a text note so GPT sees that new images were uploaded
-   */
   async function notifyGPTOfFileUpload(messageContent: string) {
     const response = await fetch(`/api/assistants/threads/${threadId}/messages`, {
       method: "POST",
@@ -379,9 +368,6 @@ export default function Chat({
     attachStreamListeners(stream);
   }
 
-  /**
-   * handleFileChange => user selected file(s)
-   */
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     if (!e.target.files || e.target.files.length === 0) return;
 
@@ -404,7 +390,6 @@ export default function Chat({
 
         let combinedMessageForGPT = "User uploaded new file(s) with observations:\n";
 
-        // Post each file into the chat
         fileUrls.forEach((url: string, idx: number) => {
           const note = observations[idx] || "(No observation)";
           let text = "";
@@ -423,7 +408,6 @@ export default function Chat({
           combinedMessageForGPT += ` - ${url}\n   Observation: ${note}\n`;
         });
 
-        // Also call update_crime_report with the evidence + observation
         if (functionCallHandler) {
           const joinedUrls = fileUrls.join(", ");
           const joinedObs = observations.join("\n");
@@ -485,9 +469,6 @@ export default function Chat({
     }
   }
 
-  // ----------------------------------------------------------------
-  // Render
-  // ----------------------------------------------------------------
   return (
     <div className={styles.chatContainer}>
       {/* If isStreaming is true => show the analyzing banner */}
@@ -505,8 +486,10 @@ export default function Chat({
       </div>
 
       <form onSubmit={handleSubmit} className={styles.inputForm}>
+        {/* ADDING fontSize:16 to avoid iOS zoom */}
         <textarea
           className={styles.input}
+          style={{ fontSize: "16px" }} 
           placeholder="Describe the incident"
           value={userInput}
           onChange={(e) => setUserInput(e.target.value)}
@@ -518,7 +501,7 @@ export default function Chat({
           disabled={inputDisabled}
           aria-label="Send"
         >
-          {/* A nicer paper-plane SVG from Feather Icons */}
+          {/* The paper-plane SVG (Feather "send" icon) */}
           <svg
             width="20"
             height="20"
