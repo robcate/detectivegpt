@@ -107,6 +107,9 @@ export default function Chat({
   const [userInput, setUserInput] = useState("");
   const [inputDisabled, setInputDisabled] = useState(false);
 
+  // Track whether a streaming "run" is in progress
+  const [isStreaming, setIsStreaming] = useState(false);
+
   // We'll store a ref to mirror inputDisabled so we can read it in an async loop
   const inputDisabledRef = useRef(inputDisabled);
   useEffect(() => {
@@ -148,9 +151,7 @@ export default function Chat({
   // A ref for the file input so we can reset it after upload
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  /**
-   * We'll track if the user has actually sent a message. If false, we skip auto-scrolling on mount.
-   */
+  // We'll track if the user has actually sent a message (so we can skip auto-scroll on mount)
   const [hasUserSentMessage, setHasUserSentMessage] = useState(false);
 
   /**
@@ -190,7 +191,7 @@ export default function Chat({
     } else {
       // If no initial messages => do a short typed greeting
       if (!typedGreetingRef.current) {
-        typedGreetingRef.current = true; // ensure we only do this once
+        typedGreetingRef.current = true;
         setMessages([{ role: "assistant", text: "", timestamp: new Date() }]);
 
         const INTRO_TEXT = "🚔 GPT is ready to take your statement. Please describe what happened.";
@@ -224,14 +225,10 @@ export default function Chat({
   }, []);
 
   /**
-   * Only scroll to bottom if user has actually sent a message
-   * or if there's new assistant content AFTER the user has begun chatting.
+   * Scroll to bottom only if user has started chatting
    */
   useEffect(() => {
-    if (!hasUserSentMessage) {
-      // Skip scrolling on first load
-      return;
-    }
+    if (!hasUserSentMessage) return;
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, hasUserSentMessage]);
 
@@ -250,13 +247,12 @@ export default function Chat({
   }, []);
 
   /**
-   * On user pressing "Send"
+   * On user pressing "Submit"
    */
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!userInput.trim()) return;
 
-    // Mark that the user has now sent at least one message
     setHasUserSentMessage(true);
 
     // We'll create a new user message
@@ -318,12 +314,26 @@ export default function Chat({
    */
   function attachStreamListeners(stream: AssistantStream) {
     console.log("[chat.tsx] attachStreamListeners => attaching...");
+
     stream.on("textCreated", handleTextCreated);
     stream.on("textDelta", handleTextDelta);
+
     stream.on("event", (event) => {
       console.log("[chat.tsx] stream on(event) =>", event);
-      if (event.event === "thread.run.requires_action") handleRequiresAction(event);
-      if (event.event === "thread.run.completed") handleRunCompleted();
+      // If the run starts => show "Analyzing..." 
+      if (event.event === "thread.run.started") {
+        setIsStreaming(true);
+        setInputDisabled(true);
+      }
+
+      if (event.event === "thread.run.requires_action") {
+        handleRequiresAction(event);
+      }
+
+      if (event.event === "thread.run.completed") {
+        handleRunCompleted();
+        setIsStreaming(false);
+      }
     });
   }
 
@@ -424,7 +434,6 @@ export default function Chat({
           const joinedUrls = fileUrls.join(", ");
           const joinedObs = observations.join("\n");
 
-          // Provide the 'id' and 'type' that the RequiredActionFunctionToolCall interface expects
           const updateCall: RequiredActionFunctionToolCall = {
             id: "temp-id",
             type: "function",
@@ -493,6 +502,13 @@ export default function Chat({
   // ----------------------------------------------------------------
   return (
     <div className={styles.chatContainer}>
+      {/* Show "Analyzing..." if a run is currently in progress */}
+      {isStreaming && (
+        <div className={styles.analyzingBanner}>
+          <p>Analyzing...</p>
+        </div>
+      )}
+
       <div className={styles.messages}>
         {messages.map((msg, i) => (
           <Message key={i} role={msg.role} text={msg.text} timestamp={msg.timestamp} />
@@ -500,23 +516,36 @@ export default function Chat({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Text input */}
+      {/* Text input form */}
       <form onSubmit={handleSubmit} className={styles.inputForm}>
-        <input
-          type="text"
+        <textarea
           className={styles.input}
           placeholder="Describe the incident"
           value={userInput}
           onChange={(e) => setUserInput(e.target.value)}
           disabled={inputDisabled}
         />
-
         <button
           type="submit"
-          className="button-common"
+          className={styles.sendButton}
           disabled={inputDisabled}
+          aria-label="Send"
         >
-          Send
+          {/* A nicer paper-plane SVG from Feather Icons */}
+          <svg
+            width="20"
+            height="20"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <line x1="22" y1="2" x2="11" y2="13" />
+            <polygon points="22 2 15 22 11 13 2 9 22 2" />
+          </svg>
         </button>
       </form>
 
@@ -529,6 +558,7 @@ export default function Chat({
           accept="image/*,video/*,application/pdf"
           multiple
           onChange={handleFileChange}
+          disabled={inputDisabled}
           style={{ display: "none" }}
         />
       </label>
