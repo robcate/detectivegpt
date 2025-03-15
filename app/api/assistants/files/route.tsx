@@ -3,20 +3,34 @@ import { openai } from "@/app/openai";
 
 // upload file to assistant's vector store
 export async function POST(request: Request) {
-  const formData = await request.formData(); // process file as FormData
-  const file = formData.get("file"); // retrieve the single file from FormData
-  const vectorStoreId = await getOrCreateVectorStore(); // get or create vector store
+  // 1) read FormData
+  const formData = await request.formData();
+  const fileValue = formData.get("file");
 
-  // upload using the file stream
+  // 2) ensure we have a valid Blob
+  if (!fileValue || typeof fileValue === "string") {
+    return new Response("No valid file found in formData.", { status: 400 });
+  }
+
+  // Convert the blob to a Buffer so openai.files.create can accept it
+  const fileBlob = fileValue as Blob;
+  const arrayBuffer = await fileBlob.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+
+  // 3) get or create vector store
+  const vectorStoreId = await getOrCreateVectorStore();
+
+  // 4) upload using the file buffer
   const openaiFile = await openai.files.create({
-    file: file,
+    file: buffer,
     purpose: "assistants",
   });
 
-  // add file to vector store
+  // 5) attach the file to vector store
   await openai.beta.vectorStores.files.create(vectorStoreId, {
     file_id: openaiFile.id,
   });
+
   return new Response();
 }
 
@@ -59,11 +73,9 @@ const getOrCreateVectorStore = async () => {
   const assistant = await openai.beta.assistants.retrieve(assistantId);
 
   // if the assistant already has a vector store, return it
-  // (NEW) We do a nullish coalescing fallback before .length
   if ((assistant.tool_resources?.file_search?.vector_store_ids ?? []).length > 0) {
     return assistant.tool_resources.file_search.vector_store_ids[0];
   }
-
   // otherwise, create a new vector store and attach it to the assistant
   const vectorStore = await openai.beta.vectorStores.create({
     name: "sample-assistant-vector-store",
