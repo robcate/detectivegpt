@@ -116,7 +116,9 @@ export default function Chat({
     inputDisabledRef.current = inputDisabled;
   }, [inputDisabled]);
 
-  // A small helper to wait until `inputDisabled` is false
+  /**
+   * Wait until inputDisabled is false, up to maxWaitMs
+   */
   async function waitForRunToComplete(
     checkIntervalMs: number = 250,
     maxWaitMs: number = 10000
@@ -139,26 +141,24 @@ export default function Chat({
   // The threadId is created once on mount, so the assistant can keep context
   const [threadId, setThreadId] = useState("");
 
-  // We'll store a ref to the bottom div so we can scroll down
+  // We'll store a ref to the bottom div so we can scroll down after each message
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   // We'll build up a plain‐text conversationLog to pass back
   const conversationLogRef = useRef("");
 
-  // A ref to track if we've already run the typed greeting (so no double calls in dev)
+  // A ref to track if we've already run the typed greeting
   const typedGreetingRef = useRef(false);
 
-  // A ref for the file input so we can reset it after upload
+  // A ref for the file input so we can reset after upload
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // We'll track if the user has actually sent a message
   const [hasUserSentMessage, setHasUserSentMessage] = useState(false);
 
   /**
-   * A helper to append lines to our local conversationLog, then call
-   * onConversationUpdated so the parent (page.tsx) can store it too.
-   *
-   * This also SKIPS logging if text is empty or "undefined".
+   * A helper to append lines to our local conversationLog,
+   * then call onConversationUpdated so the parent can store it
    */
   function appendLog(role: "user" | "assistant", text: string) {
     if (!text || text.trim() === "" || text.trim() === "undefined") {
@@ -171,10 +171,11 @@ export default function Chat({
   }
 
   /**
-   * On mount, either load initial messages or run a typed greeting
+   * On mount, either load initial messages or do a typed greeting
    */
   useEffect(() => {
     if (initialMessages.length > 0) {
+      // We'll just set them as starting messages
       const preloaded = initialMessages.map((m) => ({
         role: m.role,
         text: m.content,
@@ -182,11 +183,12 @@ export default function Chat({
       }));
       setMessages(preloaded);
 
+      // Log them
       preloaded.forEach((msg) => {
         appendLog("assistant", msg.text);
       });
     } else {
-      // If no initial messages => do a short typed greeting
+      // If no initial messages => typed greeting
       if (!typedGreetingRef.current) {
         typedGreetingRef.current = true;
         setMessages([{ role: "assistant", text: "", timestamp: new Date() }]);
@@ -207,6 +209,7 @@ export default function Chat({
               return prev;
             }
 
+            // Append next character
             const updated = { ...last, text: last.text + INTRO_TEXT[index] };
             index++;
             return [...prev.slice(0, -1), updated];
@@ -219,7 +222,7 @@ export default function Chat({
   }, []);
 
   /**
-   * Scroll to bottom only if user has started chatting
+   * Scroll to bottom each time messages changes, if user has started talking
    */
   useEffect(() => {
     if (!hasUserSentMessage) return;
@@ -262,6 +265,9 @@ export default function Chat({
     setInputDisabled(true);
   }
 
+  /**
+   * sendToGPT => POST the user's text to /api/assistants/threads/[threadId]/messages
+   */
   async function sendToGPT(text: string) {
     console.log("[chat.tsx] sendMessage =>", text);
     const response = await fetch(`/api/assistants/threads/${threadId}/messages`, {
@@ -283,6 +289,7 @@ export default function Chat({
 
     setInputDisabled(true);
 
+    // For each tool call, we call functionCallHandler
     const toolCallOutputs = await Promise.all(
       toolCalls.map(async (toolCall: RequiredActionFunctionToolCall) => {
         console.log("[chat.tsx] handleRequiresAction => calling functionCallHandler =>", toolCall);
@@ -291,7 +298,7 @@ export default function Chat({
       })
     );
 
-    // Now post them
+    // Then we POST them
     const resp = await fetch(`/api/assistants/threads/${threadId}/actions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -302,18 +309,21 @@ export default function Chat({
   }
 
   /**
-   * Attach all listeners to the assistant response stream
+   * Attach all listeners to the streaming response
    */
   function attachStreamListeners(stream: AssistantStream) {
     console.log("[chat.tsx] attachStreamListeners => attaching...");
 
+    // We'll get "textCreated" -> create a new assistant message
     stream.on("textCreated", handleTextCreated);
+    // We'll get "textDelta" -> each chunk of text
     stream.on("textDelta", handleTextDelta);
 
+    // We'll get "event" -> "thread.run.in_progress", etc
     stream.on("event", (event) => {
       console.log("[chat.tsx] stream on(event) =>", event);
 
-      // If the run transitions to in_progress => show "Analyzing..."
+      // If the run transitions to in_progress => show "Analyzing"
       if (event.event === "thread.run.in_progress") {
         setIsStreaming(true);
         setInputDisabled(true);
@@ -332,6 +342,7 @@ export default function Chat({
 
   function handleTextCreated() {
     console.log("[chat.tsx] handleTextCreated => creating new assistant message container...");
+    // Insert an empty message to fill with textDelta
     setMessages((prev) => [
       ...prev,
       { role: "assistant", text: "", timestamp: new Date() },
@@ -341,6 +352,7 @@ export default function Chat({
   function handleTextDelta(delta: any) {
     if (delta.value != null) {
       console.log("[chat.tsx] handleTextDelta => appending chunk:", delta.value);
+      // Append chunk to the last assistant message
       setMessages((prev) => {
         if (prev.length === 0) return prev;
         const last = prev[prev.length - 1];
@@ -352,6 +364,7 @@ export default function Chat({
 
   function handleRunCompleted() {
     console.log("[chat.tsx] handleRunCompleted => done streaming => enable input");
+    // Once final message is done, we log it if not empty
     const lastMsg = messages[messages.length - 1];
     if (lastMsg && lastMsg.role === "assistant") {
       appendLog("assistant", lastMsg.text);
@@ -359,6 +372,9 @@ export default function Chat({
     setInputDisabled(false);
   }
 
+  /**
+   * notifyGPTOfFileUpload => send a user message letting GPT know about new files
+   */
   async function notifyGPTOfFileUpload(messageContent: string) {
     const response = await fetch(`/api/assistants/threads/${threadId}/messages`, {
       method: "POST",
@@ -368,6 +384,9 @@ export default function Chat({
     attachStreamListeners(stream);
   }
 
+  /**
+   * handleFileChange => user uploaded files => call /api/upload => call functionCallHandler => notify GPT
+   */
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     if (!e.target.files || e.target.files.length === 0) return;
 
@@ -384,12 +403,14 @@ export default function Chat({
       console.log("[chat.tsx] File upload => response:", res.status);
 
       if (res.ok) {
+        // returned JSON: { fileUrls, observations }
         const { fileUrls, observations } = await res.json();
         console.log("[chat.tsx] fileUrls =>", fileUrls);
         console.log("[chat.tsx] observations =>", observations);
 
         let combinedMessageForGPT = "User uploaded new file(s) with observations:\n";
 
+        // For each file => show in chat, build summary
         fileUrls.forEach((url: string, idx: number) => {
           const note = observations[idx] || "(No observation)";
           let text = "";
@@ -399,15 +420,18 @@ export default function Chat({
             text = `**File Uploaded**: [Link](${url})\n**Observation:** ${note}`;
           }
 
+          // Show in local UI
           setMessages((prev) => [
             ...prev,
             { role: "assistant", text, timestamp: new Date() },
           ]);
           appendLog("assistant", text);
 
+          // Add to combined summary
           combinedMessageForGPT += ` - ${url}\n   Observation: ${note}\n`;
         });
 
+        // Optionally also call update_crime_report
         if (functionCallHandler) {
           const joinedUrls = fileUrls.join(", ");
           const joinedObs = observations.join("\n");
@@ -437,8 +461,10 @@ export default function Chat({
         await waitForRunToComplete();
         console.log("[chat.tsx] handleFileChange => run completed => now calling notifyGPTOfFileUpload...");
 
+        // let GPT see the overall summary
         await notifyGPTOfFileUpload(combinedMessageForGPT);
       } else {
+        // Upload error
         const errText = await res.text();
         console.error("[chat.tsx] file upload error =>", errText);
         setMessages((prev) => [
@@ -464,6 +490,7 @@ export default function Chat({
       appendLog("assistant", "An unexpected error occurred during file upload.");
     }
 
+    // Reset file input
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -471,7 +498,7 @@ export default function Chat({
 
   return (
     <div className={styles.chatContainer}>
-      {/* If isStreaming is true => show the analyzing banner */}
+      {/* If isStreaming is true => show an “Analyzing…” banner */}
       {isStreaming && (
         <div className={styles.analyzingBanner}>
           <p>Analyzing...</p>
@@ -480,16 +507,21 @@ export default function Chat({
 
       <div className={styles.messages}>
         {messages.map((msg, i) => (
-          <Message key={i} role={msg.role} text={msg.text} timestamp={msg.timestamp} />
+          <Message
+            key={i}
+            role={msg.role}
+            text={msg.text}
+            timestamp={msg.timestamp}
+          />
         ))}
         <div ref={messagesEndRef} />
       </div>
 
       <form onSubmit={handleSubmit} className={styles.inputForm}>
-        {/* ADDING fontSize:16 to avoid iOS zoom */}
+        {/* to avoid iOS zoom, use fontSize >= 16 */}
         <textarea
           className={styles.input}
-          style={{ fontSize: "16px" }} 
+          style={{ fontSize: "16px" }}
           placeholder="Describe the incident"
           value={userInput}
           onChange={(e) => setUserInput(e.target.value)}
@@ -501,7 +533,7 @@ export default function Chat({
           disabled={inputDisabled}
           aria-label="Send"
         >
-          {/* The paper-plane SVG (Feather "send" icon) */}
+          {/* The feather "send" icon */}
           <svg
             width="20"
             height="20"
