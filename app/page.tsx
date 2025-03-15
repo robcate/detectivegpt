@@ -136,13 +136,13 @@ export default function Page() {
   const [conversationLog, setConversationLog] = useState("");
 
   const [initialMessages] = useState([
-    {
-      role: "assistant" as const,
-      content:
-        "I'm ready to take your statement about the incident. " +
-        "Please describe clearly what happened, including details about the suspect(s), vehicle(s), and any evidence.",
-    },
-  ]);
+  {
+    role: "assistant" as const,
+    content:
+      "I'm ready to take your statement about the incident, in any language you prefer. " +
+      "Please describe clearly what happened, including details about the suspect(s), vehicle(s), and any evidence.",
+  },
+]);
 
   console.log("🟨 [Page] Rendered. Current crimeReport =>", crimeReport);
 
