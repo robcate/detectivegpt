@@ -8,15 +8,22 @@ import vision from "@google-cloud/vision";
 import OpenAI from "openai";
 
 // -------------------- GCS & Vision setup --------------------
+// We decode base64 from GCP_TRANSLATE_KEY_BASE64 and parse JSON
+const base64Key = process.env.GCP_TRANSLATE_KEY_BASE64 || "";
+const decodedKey = Buffer.from(base64Key, "base64").toString("utf-8");
+const gcpCreds = JSON.parse(decodedKey || "{}");
+
+// Create the GCS client
 const storage = new Storage({
   projectId: process.env.GCP_PROJECT_ID,
-  keyFilename: process.env.GCP_KEYFILE_PATH,
+  credentials: gcpCreds,
 });
 const bucket = storage.bucket(process.env.GCP_BUCKET_NAME || "my-bucket");
 
+// Create the Vision client
 const visionClient = new vision.ImageAnnotatorClient({
   projectId: process.env.GCP_PROJECT_ID,
-  keyFilename: process.env.GCP_KEYFILE_PATH,
+  credentials: gcpCreds,
 });
 
 // -------------------- FORCE CLEAN KEY --------------------
