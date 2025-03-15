@@ -149,6 +149,11 @@ export default function Chat({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   /**
+   * We'll track if the user has actually sent a message. If false, we skip auto-scrolling on mount.
+   */
+  const [hasUserSentMessage, setHasUserSentMessage] = useState(false);
+
+  /**
    * A helper to append lines to our local conversationLog, then call
    * onConversationUpdated so the parent (page.tsx) can store it too.
    *
@@ -219,11 +224,16 @@ export default function Chat({
   }, []);
 
   /**
-   * Always scroll to bottom after each render
+   * Only scroll to bottom if user has actually sent a message
+   * or if there's new assistant content AFTER the user has begun chatting.
    */
   useEffect(() => {
+    if (!hasUserSentMessage) {
+      // Skip scrolling on first load
+      return;
+    }
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, hasUserSentMessage]);
 
   /**
    * Create a new Thread on mount
@@ -245,6 +255,9 @@ export default function Chat({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!userInput.trim()) return;
+
+    // Mark that the user has now sent at least one message
+    setHasUserSentMessage(true);
 
     // We'll create a new user message
     const newMsg: MessageProps = {
@@ -414,7 +427,7 @@ export default function Chat({
           // Provide the 'id' and 'type' that the RequiredActionFunctionToolCall interface expects
           const updateCall: RequiredActionFunctionToolCall = {
             id: "temp-id",
-            type: "function", // <--- fix from "function_call" to "function"
+            type: "function",
             function: {
               name: "update_crime_report",
               arguments: JSON.stringify({
@@ -497,7 +510,7 @@ export default function Chat({
           onChange={(e) => setUserInput(e.target.value)}
           disabled={inputDisabled}
         />
-        
+
         <button
           type="submit"
           className="button-common"
@@ -505,11 +518,10 @@ export default function Chat({
         >
           Send
         </button>
-
       </form>
 
       {/* File upload */}
-      <label className="button-common">
+      <label className="button-common" style={{ marginTop: "10px" }}>
         Upload Evidence
         <input
           ref={fileInputRef}

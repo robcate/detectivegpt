@@ -66,6 +66,8 @@
   padding: 10px;
   display: flex;
   flex-direction: column;
+  -webkit-overflow-scrolling: touch; /* iOS smooth scrolling */
+
 }
 
 .userMessage,
