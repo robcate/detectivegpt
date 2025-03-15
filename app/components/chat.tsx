@@ -410,7 +410,11 @@ export default function Chat({
         if (functionCallHandler) {
           const joinedUrls = fileUrls.join(", ");
           const joinedObs = observations.join("\n");
-          const updateCall = {
+
+          // Add 'id' and 'type' so we match RequiredActionFunctionToolCall
+          const updateCall: RequiredActionFunctionToolCall = {
+            id: "temp-id",
+            type: "function_call",
             function: {
               name: "update_crime_report",
               arguments: JSON.stringify({
@@ -419,6 +423,7 @@ export default function Chat({
               }),
             },
           };
+
           console.log("[chat.tsx] handleFileChange => calling functionCallHandler =>", updateCall);
           const resultJson = await functionCallHandler(updateCall);
           console.log("[chat.tsx] functionCallHandler => returned =>", resultJson);
@@ -504,7 +509,7 @@ export default function Chat({
       </form>
 
       {/* File upload */}
-            <label className="button-common">
+      <label className="button-common">
         Upload Evidence
         <input
           ref={fileInputRef}
@@ -515,7 +520,6 @@ export default function Chat({
           style={{ display: "none" }}
         />
       </label>
-
     </div>
   );
 }
