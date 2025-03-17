@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "worker": "ts-node worker/transcriptionWorker.ts"
+    "worker": "ts-node worker/transcriptionWorker.ts",
+    "test": "jest"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.15.2",
@@ -29,10 +30,24 @@
     "react-markdown": "^9.0.1"
   },
   "devDependencies": {
+    "@babel/preset-env": "^7.26.9",
+    "@babel/preset-react": "^7.26.3",
+    "@babel/preset-typescript": "^7.26.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.2.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/jest": "^29.5.14",
     "@types/node": "20.12.7",
     "@types/react": "18.2.79",
+    "babel-jest": "^29.7.0",
+    "identity-obj-proxy": "^3.0.0",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0",
+    "ts-jest": "^29.2.6",
     "ts-node": "^10.9.2",
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "web-streams-polyfill": "^3.3.3",
+    "whatwg-fetch": "^3.6.20"
   },
   "prettier": {
     "singleQuote": false
