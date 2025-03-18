@@ -1,0 +1,12 @@
+{
+  "functions": {
+    "app/assistants/threads/[threadId]/messages/route.js": {
+      "memory": 1024,
+      "maxDuration": 60
+    },
+    "app/assistants/threads/[threadId]/actions/route.js": {
+      "memory": 1024,
+      "maxDuration": 60
+    }
+  }
+}
