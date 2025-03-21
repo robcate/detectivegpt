@@ -193,6 +193,11 @@ export default function Page() {
     doc.setFillColor(241, 245, 249);
     doc.rect(0, 0, pageWidth, pageHeight, "F");
 
+    // We'll define margins & wrap width here
+    const marginLeft = 60;
+    const marginRight = 60;
+    const wrapWidth = pageWidth - marginLeft - marginRight;
+
     // Logo with top spacing
     const publicLogoBase64 = await fetchPublicLogoAsBase64();
     if (publicLogoBase64) {
@@ -226,7 +231,7 @@ export default function Page() {
       doc.setTextColor("#444");
     }
 
-    // Print label in bold, then value with only first letter capitalized
+    // Print label in bold, then wrap the value if it’s long
     function addLine(label: string, value: string) {
       if (!value) return;
       doc.setFont("helvetica", "bold");
@@ -234,9 +239,20 @@ export default function Page() {
       const labelWidth = doc.getTextWidth(labelText);
       doc.text(labelText, 60, yPos);
 
+      // We'll split text if it's too long
       doc.setFont("helvetica", "normal");
-      doc.text(capitalizeFirst(value), 60 + labelWidth, yPos);
+      const splitted = doc.splitTextToSize(capitalizeFirst(value), wrapWidth - labelWidth);
 
+      // Print the first line to the right of the label
+      doc.text(splitted[0], 60 + labelWidth, yPos);
+
+      // If there's more lines, print them below
+      for (let i = 1; i < splitted.length; i++) {
+        yPos += lineSpacing;
+        doc.text(splitted[i], 60, yPos);
+      }
+
+      // Then move down for the next field
       yPos += lineSpacing;
     }
 
@@ -660,7 +676,7 @@ export default function Page() {
           )}
           {crimeReport.crime_type && (
             <p>
-              <strong>Type:</strong> {capitalizeFirst(crimeReport.crime_type)}
+              <strong>Type:</strong> {crimeReport.crime_type?.toUpperCase()}
             </p>
           )}
           {crimeReport.datetime && (
