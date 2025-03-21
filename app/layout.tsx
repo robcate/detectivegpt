@@ -5,8 +5,8 @@ import { assistantId } from "./assistant-config";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata = {
-  title: "Detective GPT",
-  description: "Report crimes securely & anonymously. Your information is protected.",
+  title: "INVESTIGATIVE AI",
+  description: "Report incidents and tips securely & anonymously. Your information is protected.",
   icons: {
     icon: "/openai.svg",
   },

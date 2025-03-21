@@ -6,6 +6,7 @@ import Chat from "./components/chat";
 import { RequiredActionFunctionToolCall } from "openai/resources/beta/threads/runs/runs";
 import jsPDF from "jspdf";
 import getVerifiedLocation from "./utils/getLocation";
+import { TIME_ZONE, BRAND_NAME } from "./brandConstants"; // BRAND_LOGO unused in code
 
 /**
  * CHRONO + LUXON
@@ -113,15 +114,49 @@ async function fetchWeather(lat: number, lon: number, isoDatetime: string): Prom
     }
     const data = await resp.json();
     const desc = data.weather?.[0]?.description || "unknown";
-    const temp = data.main?.temp !== undefined ? `${Math.round(data.main.temp)}°F` : "??°F";
-    const humidity = data.main?.humidity !== undefined ? `${data.main.humidity}% humidity` : "";
-    const wind = data.wind?.speed !== undefined ? `wind ${Math.round(data.wind.speed)} mph` : "";
+    const temp =
+      data.main?.temp !== undefined ? `${Math.round(data.main.temp)}°F` : "??°F";
+    const humidity =
+      data.main?.humidity !== undefined ? `${data.main.humidity}% humidity` : "";
+    const wind =
+      data.wind?.speed !== undefined ? `wind ${Math.round(data.wind.speed)} mph` : "";
     const summaryParts = [desc, temp, humidity, wind].filter(Boolean);
     const summary = summaryParts.join(", ");
     return summary || "No weather data available.";
   } catch (err) {
     console.error("❌ [fetchWeather] Unexpected error =>", err);
     return "Error fetching weather data.";
+  }
+}
+
+/** 
+ * Convert first letter of a string to uppercase, leave the rest as-is.
+ * e.g. "vehicle theft" => "Vehicle theft"
+ */
+function capitalizeFirst(str: string): string {
+  if (!str) return "";
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+/**
+ * Helper to fetch /logo.png from public/ and convert it to base64
+ */
+async function fetchPublicLogoAsBase64(): Promise<string | null> {
+  try {
+    const res = await fetch("/logo.png");
+    if (!res.ok) {
+      throw new Error("Failed to fetch /logo.png");
+    }
+    const blob = await res.blob();
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (err) {
+    console.warn("🟨 [Page] Could not load /logo.png =>", err);
+    return null;
   }
 }
 
@@ -136,120 +171,190 @@ export default function Page() {
   const [conversationLog, setConversationLog] = useState("");
 
   const [initialMessages] = useState([
-  {
-    role: "assistant" as const,
-    content:
-      "I'm ready to take your statement about the incident, in any language you prefer. " +
-      "Please describe clearly what happened, including details about the suspect(s), vehicle(s), and any evidence.",
-  },
-]);
+    {
+      role: "assistant" as const,
+      content:
+        `Hello, this is ${BRAND_NAME}. I'm ready to take your statement about the incident, in any language you prefer. Please describe clearly what happened, including details about the suspect(s), vehicle(s), and any evidence.`,
+    },
+  ]);
 
   console.log("🟨 [Page] Rendered. Current crimeReport =>", crimeReport);
 
   /**
-   * PDF Generation
+   * PDF Generation - keep subheadings uppercase, but only capitalize first letter of values
    */
-  const downloadPDFReport = () => {
+  const downloadPDFReport = async () => {
     console.log("🟨 [Page] Generating PDF...");
     const doc = new jsPDF({ unit: "pt", format: "letter" });
+
+    // Light gray background
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    doc.setFillColor(241, 245, 249);
+    doc.rect(0, 0, pageWidth, pageHeight, "F");
+
+    // Logo with top spacing
+    const publicLogoBase64 = await fetchPublicLogoAsBase64();
+    if (publicLogoBase64) {
+      doc.addImage(publicLogoBase64, "PNG", 50, 40, 50, 50);
+    }
+
+    // Title
+    doc.setFont("helvetica", "bold");
     doc.setFontSize(18);
-    doc.text("Detective GPT Crime Report", 306, 40, { align: "center" });
+    doc.setTextColor("#333");
+    doc.text(`${BRAND_NAME} Report`, pageWidth / 2, 100, { align: "center" });
 
+    // Body style
+    doc.setFont("helvetica", "normal");
     doc.setFontSize(12);
-    let yPos = 70;
-    const lineSpacing = 16;
-    const wrapWidth = 480;
+    doc.setTextColor("#444");
 
+    let yPos = 180;
+    const lineSpacing = 20;
+
+    // Helper for subheadings
+    function addSubheading(title: string) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(14);
+      doc.setTextColor("#000");
+      doc.text(title.toUpperCase(), 60, yPos);
+      yPos += lineSpacing;
+      // revert
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(12);
+      doc.setTextColor("#444");
+    }
+
+    // Print label in bold, then value with only first letter capitalized
     function addLine(label: string, value: string) {
       if (!value) return;
-      const upperValue = value.toUpperCase();
-      const line = `${label.toUpperCase()}: ${upperValue}`;
-      const wrapped = doc.splitTextToSize(line, wrapWidth);
-      wrapped.forEach((wrappedLine) => {
-        doc.text(wrappedLine, 60, yPos);
-        yPos += lineSpacing;
-      });
+      doc.setFont("helvetica", "bold");
+      const labelText = label.toUpperCase() + ": ";
+      const labelWidth = doc.getTextWidth(labelText);
+      doc.text(labelText, 60, yPos);
+
+      doc.setFont("helvetica", "normal");
+      doc.text(capitalizeFirst(value), 60 + labelWidth, yPos);
+
+      yPos += lineSpacing;
     }
 
-    if (crimeReport.caseNumber) {
-      addLine("Case Number", crimeReport.caseNumber);
-    }
-    if (crimeReport.crime_type) {
-      addLine("Type", crimeReport.crime_type);
-    }
-    if (crimeReport.datetime) {
-      addLine("When", crimeReport.datetime);
-    }
-    if (crimeReport.location) {
-      addLine("Location", crimeReport.location);
+    // 1) CASE INFO
+    const hasCaseInfo =
+      crimeReport.caseNumber ||
+      crimeReport.crime_type ||
+      crimeReport.datetime ||
+      crimeReport.location ||
+      crimeReport.coordinates ||
+      crimeReport.weather ||
+      (crimeReport.vehicles && crimeReport.vehicles.length > 0);
+
+    if (hasCaseInfo) {
+      addSubheading("Case Info");
+      if (crimeReport.caseNumber) addLine("Case Number", crimeReport.caseNumber);
+      if (crimeReport.crime_type) addLine("Type", crimeReport.crime_type);
+      if (crimeReport.datetime) addLine("When", crimeReport.datetime);
+      if (crimeReport.location) addLine("Location", crimeReport.location);
+
+      if (crimeReport.coordinates) {
+        if (crimeReport.coordinates.lat) {
+          addLine("Latitude", String(crimeReport.coordinates.lat));
+        }
+        if (crimeReport.coordinates.lng) {
+          addLine("Longitude", String(crimeReport.coordinates.lng));
+        }
+      }
+
+      if (crimeReport.weather) {
+        addLine("Weather", crimeReport.weather);
+      }
+      if (crimeReport.vehicles && crimeReport.vehicles.length > 0) {
+        addLine("Vehicles", crimeReport.vehicles.join(", "));
+      }
     }
 
-    if (crimeReport.coordinates) {
-      addLine("Latitude", crimeReport.coordinates.lat.toString());
-      addLine("Longitude", crimeReport.coordinates.lng.toString());
-    }
-
-    if (crimeReport.weather) {
-      addLine("Weather", crimeReport.weather);
-    }
-
-    if (crimeReport.vehicles && crimeReport.vehicles.length > 0) {
-      addLine("Vehicles", crimeReport.vehicles.join(", "));
-    }
-
+    // 2) SUSPECT DETAILS
     if (crimeReport.suspect) {
-      if (crimeReport.suspect.gender) addLine("Suspect Gender", crimeReport.suspect.gender);
-      if (crimeReport.suspect.age) addLine("Suspect Age", crimeReport.suspect.age);
-      if (crimeReport.suspect.hair) addLine("Suspect Hair", crimeReport.suspect.hair);
-      if (crimeReport.suspect.clothing) addLine("Suspect Clothing", crimeReport.suspect.clothing);
-      if (crimeReport.suspect.features) addLine("Suspect Features", crimeReport.suspect.features);
-      if (crimeReport.suspect.height) addLine("Suspect Height", crimeReport.suspect.height);
-      if (crimeReport.suspect.weight) addLine("Suspect Weight", crimeReport.suspect.weight);
-      if (crimeReport.suspect.tattoos) addLine("Suspect Tattoos", crimeReport.suspect.tattoos);
-      if (crimeReport.suspect.scars) addLine("Suspect Scars", crimeReport.suspect.scars);
-      if (crimeReport.suspect.accent) addLine("Suspect Accent", crimeReport.suspect.accent);
+      const s = crimeReport.suspect;
+      const hasSuspectFields =
+        s.gender ||
+        s.age ||
+        s.hair ||
+        s.clothing ||
+        s.features ||
+        s.height ||
+        s.weight ||
+        s.tattoos ||
+        s.scars ||
+        s.accent;
+
+      if (hasSuspectFields) {
+        addSubheading("Suspect Details");
+        if (s.gender) addLine("Gender", s.gender);
+        if (s.age) addLine("Age", s.age);
+        if (s.hair) addLine("Hair", s.hair);
+        if (s.clothing) addLine("Clothing", s.clothing);
+        if (s.features) addLine("Features", s.features);
+        if (s.height) addLine("Height", s.height);
+        if (s.weight) addLine("Weight", s.weight);
+        if (s.tattoos) addLine("Tattoos", s.tattoos);
+        if (s.scars) addLine("Scars", s.scars);
+        if (s.accent) addLine("Accent", s.accent);
+      }
     }
 
-    if (crimeReport.weapon) {
-      addLine("Weapon", crimeReport.weapon);
+    // 3) WEAPON & EVIDENCE
+    const hasWeaponOrEvidence =
+      crimeReport.weapon ||
+      (crimeReport.evidenceObservations && crimeReport.evidenceObservations.trim()) ||
+      crimeReport.evidence ||
+      (crimeReport.cameras && crimeReport.cameras.length > 0) ||
+      crimeReport.injuries ||
+      crimeReport.propertyDamage;
+
+    if (hasWeaponOrEvidence) {
+      addSubheading("Weapon & Evidence");
+      if (crimeReport.weapon) addLine("Weapon", crimeReport.weapon);
+
+      if (crimeReport.evidenceObservations && crimeReport.evidenceObservations.trim()) {
+        addLine("Evidence", crimeReport.evidenceObservations);
+      } else if (crimeReport.evidence) {
+        addLine("Evidence", crimeReport.evidence);
+      }
+
+      if (crimeReport.cameras && crimeReport.cameras.length > 0) {
+        addLine("Cameras", crimeReport.cameras.join(", "));
+      }
+      if (crimeReport.injuries) addLine("Injuries", crimeReport.injuries);
+      if (crimeReport.propertyDamage) addLine("Property Damage", crimeReport.propertyDamage);
     }
 
-    /**
-     * (NEW) If we have evidenceObservations, show that as "Evidence";
-     * otherwise fallback to raw evidence URLs
-     */
-    if (crimeReport.evidenceObservations && crimeReport.evidenceObservations.trim()) {
-      addLine("Evidence", crimeReport.evidenceObservations);
-    } else if (crimeReport.evidence) {
-      addLine("Evidence", crimeReport.evidence);
-    }
-
-    if (crimeReport.cameras && crimeReport.cameras.length > 0) {
-      addLine("Cameras", crimeReport.cameras.join(", "));
-    }
-
-    if (crimeReport.injuries) {
-      addLine("Injuries", crimeReport.injuries);
-    }
-    if (crimeReport.propertyDamage) {
-      addLine("Property Damage", crimeReport.propertyDamage);
-    }
-
+    // 4) WITNESSES
     if (crimeReport.witnesses && crimeReport.witnesses.length > 0) {
+      addSubheading("Witnesses");
       const witnessStr = crimeReport.witnesses
         .map((w) => (w.contact ? `${w.name} (${w.contact})` : w.name))
         .join("; ");
       addLine("Witnesses", witnessStr);
     }
 
+    // 5) INCIDENT DESCRIPTION
     if (crimeReport.incidentDescription) {
-      addLine("Incident Description", crimeReport.incidentDescription);
+      addSubheading("Incident Description");
+      addLine("Description", crimeReport.incidentDescription);
     }
 
+    // Footer
     doc.setFontSize(8);
-    doc.text(`Report generated by DetectiveGPT on ${new Date().toLocaleString()}`, 306, 770, {
-      align: "center",
-    });
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor("#666");
+    doc.text(
+      `Report generated by ${BRAND_NAME} on ${new Date().toLocaleString()}`,
+      pageWidth / 2,
+      pageHeight - 30,
+      { align: "center" }
+    );
 
     doc.save("crime_report.pdf");
   };
@@ -432,7 +537,8 @@ export default function Page() {
       try {
         if (args.location) {
           console.log("🟨 [Page] Attempting to verify location:", args.location);
-          const { success, locationCandidates, singleResult, error } = await getVerifiedLocation(args.location);
+          const { success, locationCandidates, singleResult, error } =
+            await getVerifiedLocation(args.location);
           if (!success) {
             console.warn("🟨 [Page] getVerifiedLocation => not successful:", error);
           } else if (locationCandidates.length > 1) {
@@ -466,8 +572,7 @@ export default function Page() {
           const dateObj = bestResult.start.date();
           console.log("🟨 [Page] chrono parsed date =>", dateObj);
 
-          const fallbackTZ = process.env.NEXT_PUBLIC_TIME_ZONE || "America/Chicago";
-          const dt = DateTime.fromJSDate(dateObj, { zone: fallbackTZ });
+          const dt = DateTime.fromJSDate(dateObj, { zone: TIME_ZONE });
           const isoStr = dt.toISO({ suppressMilliseconds: true });
           console.log("🟨 [Page] chrono => luxon => final =>", isoStr);
 
@@ -497,7 +602,12 @@ export default function Page() {
 
       const result = await saveCrimeReportToAirtable(merged);
       if (result.success) {
-        console.log("🟨 [Page] Airtable save success => recordId:", result.recordId, "caseNumber:", result.caseNumber);
+        console.log(
+          "🟨 [Page] Airtable save success => recordId:",
+          result.recordId,
+          "caseNumber:",
+          result.caseNumber
+        );
         setCrimeReport((prev) => ({
           ...prev,
           airtableRecordId: result.recordId,
@@ -525,118 +635,162 @@ export default function Page() {
     return JSON.stringify({ success: false, message: "No matching function found." });
   };
 
+  // ---- RENDERED PAGE ----
   return (
     <main className={styles.main}>
       <div className={styles.crimeReportContainer}>
-        <h3>Crime Report Summary</h3>
+        {/* Header */}
+        <div className={styles.cardHeader}>
+          <img
+            src="/logo.png"
+            alt={`${BRAND_NAME} Logo`}
+            style={{ height: 50, width: "auto" }}
+          />
+          <h1>{BRAND_NAME}</h1>
+        </div>
 
-        {crimeReport.caseNumber && (
-          <p>
-            <strong>Case Number:</strong> {crimeReport.caseNumber}
-          </p>
-        )}
-        {crimeReport.crime_type && (
-          <p>
-            <strong>Type:</strong> {crimeReport.crime_type}
-          </p>
-        )}
-        {crimeReport.datetime && (
-          <p>
-            <strong>When:</strong> {crimeReport.datetime}
-          </p>
-        )}
-        {crimeReport.location && (
-          <p>
-            <strong>Location:</strong> {crimeReport.location}
-          </p>
-        )}
-        {crimeReport.coordinates && (
-          <>
+        <h3 className={styles.sectionTitle}>Report Summary</h3>
+
+        {/* Basic Case Info */}
+        <section className={styles.caseInfo}>
+          {crimeReport.caseNumber && (
             <p>
-              <strong>Latitude:</strong> {crimeReport.coordinates.lat}
+              <strong>Case Number:</strong> {capitalizeFirst(crimeReport.caseNumber)}
             </p>
+          )}
+          {crimeReport.crime_type && (
             <p>
-              <strong>Longitude:</strong> {crimeReport.coordinates.lng}
+              <strong>Type:</strong> {capitalizeFirst(crimeReport.crime_type)}
             </p>
-          </>
-        )}
-        {crimeReport.weather && (
-          <p>
-            <strong>Weather:</strong> {crimeReport.weather}
-          </p>
-        )}
-        {crimeReport.vehicles && crimeReport.vehicles.length > 0 && (
-          <p>
-            <strong>Vehicles:</strong> {crimeReport.vehicles.join(", ")}
-          </p>
-        )}
+          )}
+          {crimeReport.datetime && (
+            <p>
+              <strong>When:</strong> {capitalizeFirst(crimeReport.datetime)}
+            </p>
+          )}
+          {crimeReport.location && (
+            <p>
+              <strong>Location:</strong> {capitalizeFirst(crimeReport.location)}
+            </p>
+          )}
+          {crimeReport.coordinates && (
+            <>
+              <p>
+                <strong>Latitude:</strong> {String(crimeReport.coordinates.lat)}
+              </p>
+              <p>
+                <strong>Longitude:</strong> {String(crimeReport.coordinates.lng)}
+              </p>
+            </>
+          )}
+          {crimeReport.weather && (
+            <p>
+              <strong>Weather:</strong> {capitalizeFirst(crimeReport.weather)}
+            </p>
+          )}
+          {crimeReport.vehicles && crimeReport.vehicles.length > 0 && (
+            <p>
+              <strong>Vehicles:</strong> {capitalizeFirst(crimeReport.vehicles.join(", "))}
+            </p>
+          )}
+        </section>
+
+        {/* Suspect Details */}
         {crimeReport.suspect && (
-          <div>
+          <section className={styles.suspectInfo}>
             <strong>Suspect Details:</strong>
-            {crimeReport.suspect.gender && <p>Gender: {crimeReport.suspect.gender}</p>}
-            {crimeReport.suspect.age && <p>Age: {crimeReport.suspect.age}</p>}
-            {crimeReport.suspect.hair && <p>Hair: {crimeReport.suspect.hair}</p>}
-            {crimeReport.suspect.clothing && <p>Clothing: {crimeReport.suspect.clothing}</p>}
-            {crimeReport.suspect.features && <p>Features: {crimeReport.suspect.features}</p>}
-            {crimeReport.suspect.height && <p>Height: {crimeReport.suspect.height}</p>}
-            {crimeReport.suspect.weight && <p>Weight: {crimeReport.suspect.weight}</p>}
-            {crimeReport.suspect.tattoos && <p>Tattoos: {crimeReport.suspect.tattoos}</p>}
-            {crimeReport.suspect.scars && <p>Scars: {crimeReport.suspect.scars}</p>}
-            {crimeReport.suspect.accent && <p>Accent: {crimeReport.suspect.accent}</p>}
-          </div>
-        )}
-        {crimeReport.weapon && (
-          <p>
-            <strong>Weapon:</strong> {crimeReport.weapon}
-          </p>
+            {crimeReport.suspect.gender && (
+              <p>Gender: {capitalizeFirst(crimeReport.suspect.gender)}</p>
+            )}
+            {crimeReport.suspect.age && (
+              <p>Age: {capitalizeFirst(crimeReport.suspect.age)}</p>
+            )}
+            {crimeReport.suspect.hair && (
+              <p>Hair: {capitalizeFirst(crimeReport.suspect.hair)}</p>
+            )}
+            {crimeReport.suspect.clothing && (
+              <p>Clothing: {capitalizeFirst(crimeReport.suspect.clothing)}</p>
+            )}
+            {crimeReport.suspect.features && (
+              <p>Features: {capitalizeFirst(crimeReport.suspect.features)}</p>
+            )}
+            {crimeReport.suspect.height && (
+              <p>Height: {capitalizeFirst(crimeReport.suspect.height)}</p>
+            )}
+            {crimeReport.suspect.weight && (
+              <p>Weight: {capitalizeFirst(crimeReport.suspect.weight)}</p>
+            )}
+            {crimeReport.suspect.tattoos && (
+              <p>Tattoos: {capitalizeFirst(crimeReport.suspect.tattoos)}</p>
+            )}
+            {crimeReport.suspect.scars && (
+              <p>Scars: {capitalizeFirst(crimeReport.suspect.scars)}</p>
+            )}
+            {crimeReport.suspect.accent && (
+              <p>Accent: {capitalizeFirst(crimeReport.suspect.accent)}</p>
+            )}
+          </section>
         )}
 
-        {/**
-         * (NEW) Show short GPT text if present (evidenceObservations),
-         * else show raw evidence
-         */}
-        {crimeReport.evidenceObservations && crimeReport.evidenceObservations.trim() ? (
-          <p>
-            <strong>Evidence:</strong> {crimeReport.evidenceObservations}
-          </p>
-        ) : crimeReport.evidence ? (
-          <p>
-            <strong>Evidence:</strong> {crimeReport.evidence}
-          </p>
-        ) : null}
+        {/* Weapon / Evidence / Cameras / Injuries / Damage */}
+        <section className={styles.evidenceInfo}>
+          {crimeReport.weapon && (
+            <p>
+              <strong>Weapon:</strong> {capitalizeFirst(crimeReport.weapon)}
+            </p>
+          )}
 
-        {crimeReport.cameras && crimeReport.cameras.length > 0 && (
-          <p>
-            <strong>Cameras:</strong> {crimeReport.cameras.join(", ")}
-          </p>
-        )}
-        {crimeReport.injuries && (
-          <p>
-            <strong>Injuries:</strong> {crimeReport.injuries}
-          </p>
-        )}
-        {crimeReport.propertyDamage && (
-          <p>
-            <strong>Property Damage:</strong> {crimeReport.propertyDamage}
-          </p>
-        )}
+          {crimeReport.evidenceObservations && crimeReport.evidenceObservations.trim() ? (
+            <p>
+              <strong>Evidence:</strong> {capitalizeFirst(crimeReport.evidenceObservations)}
+            </p>
+          ) : crimeReport.evidence ? (
+            <p>
+              <strong>Evidence:</strong> {capitalizeFirst(crimeReport.evidence)}
+            </p>
+          ) : null}
+
+          {crimeReport.cameras && crimeReport.cameras.length > 0 && (
+            <p>
+              <strong>Cameras:</strong> {capitalizeFirst(crimeReport.cameras.join(", "))}
+            </p>
+          )}
+          {crimeReport.injuries && (
+            <p>
+              <strong>Injuries:</strong> {capitalizeFirst(crimeReport.injuries)}
+            </p>
+          )}
+          {crimeReport.propertyDamage && (
+            <p>
+              <strong>Property Damage:</strong> {capitalizeFirst(crimeReport.propertyDamage)}
+            </p>
+          )}
+        </section>
+
+        {/* Witnesses */}
         {crimeReport.witnesses && crimeReport.witnesses.length > 0 && (
-          <div>
+          <section className={styles.witnessInfo}>
             <strong>Witnesses:</strong>
             {crimeReport.witnesses.map((w, i) => (
               <p key={i}>
-                {w.name}
-                {w.contact ? ` (Contact: ${w.contact})` : ""}
+                {capitalizeFirst(w.name)}
+                {w.contact ? ` (Contact: ${capitalizeFirst(w.contact)})` : ""}
               </p>
             ))}
-          </div>
-        )}
-        {crimeReport.incidentDescription && (
-          <p>
-            <strong>Incident Description:</strong> {crimeReport.incidentDescription}
-          </p>
+          </section>
         )}
 
+        {/* Incident Description */}
+        {crimeReport.incidentDescription && (
+          <section className={styles.incidentInfo}>
+            <p>
+              <strong>Incident Description:</strong>{" "}
+              {capitalizeFirst(crimeReport.incidentDescription)}
+            </p>
+          </section>
+        )}
+
+        {/* Download Button */}
         <button className="button-common centered" onClick={downloadPDFReport}>
           📥 Download PDF Report
         </button>
